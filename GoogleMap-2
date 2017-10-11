@@ -1,0 +1,1414 @@
+/**
+ * Created by lzq(函数一等公民) on 2017/9/21.
+ */
+(function () {
+    W_creatScript('/base/bluebird/3.5/bluebird.min.js');
+
+    function initMap() {
+        var $LatLng = $('#showDaytravl').find('.near-place').eq(0);
+        maplace = new google.maps.Map(document.getElementById('nearMapTransition'), {
+            zoom: 12,
+            center: new google.maps.LatLng(Number(GetQueryString('lat')), Number(GetQueryString('lng'))),
+            gestureHandling: 'greedy'
+        });
+    }//初始化
+    window.initMap = initMap
+})();
+
+/**
+ * 距离矩阵响应
+ * @param LatLng1 起点坐标
+ * @param LatLng2 终点坐标
+ * @param travelMode  选择交通方式 BUS SUBWAY DRIVING目前逻辑三种
+ * @cb 请求后的回调(response, status)
+ */
+function Matrix(LatLng1, LatLng2, travelMode, cb) {
+    return new Promise(function (res, err) {
+        var MatrixFlag = false;//自驾行开关
+        //两点坐标
+        var origin1 = new google.maps.LatLng(LatLng1[0], LatLng1[1]);
+        var destinationA = new google.maps.LatLng(LatLng2[0], LatLng2[1]);
+
+
+        if (travelMode === 'BUS') {
+            var transitMode = 'BUS';
+            atrixFlag = false;
+        } else if (travelMode === 'SUBWAY') {
+            var transitMode = 'SUBWAY';
+            MatrixFlag = false;
+        } else {
+            MatrixFlag = true;//走自驾行请求
+        }
+
+
+        // 公交和地铁->travelMode 为 TRANSIT
+        var TransitOptions = {
+            arrivalTime: new Date(Date.now() + 1),
+            modes: [transitMode]//表示计算的路线应首选x交通方法出行。
+        };
+
+        //自驾->travelMode 为 DRIVING
+        var DrivingOptions = {
+            departureTime: new Date(Date.now() + 1),
+            //为在同时考虑已知历史交通状况和实时交通状况的情况下对出行时间做出的最佳估计
+            trafficModel: 'bestguess'
+        };
+
+
+        //请求服务器
+        var service = new google.maps.DistanceMatrixService();
+        if (MatrixFlag) {
+            //自驾请求
+            service.getDistanceMatrix({
+                //必选
+                origins: [origin1], //多个计算起点的坐标
+                destinations: [destinationA],//多个计算终点的坐标
+
+                travelMode: 'DRIVING', //驾驶方式
+                drivingOptions: DrivingOptions,
+
+                avoidHighways: false,//计算起点与终点之间的路线时将尽可能避免公路
+                avoidTolls: false//计算两点之间的路线时将尽可能使用非收费路线
+            }, function (response, status) {
+                res(response, status)
+            });
+
+        } else {
+            //公家请求
+            service.getDistanceMatrix({
+                //必选
+                origins: [origin1], //多个计算起点的坐标
+                destinations: [destinationA],//多个计算终点的坐标
+
+                //下面都是可选,二选一
+                travelMode: 'TRANSIT',//交通方式选择
+                transitOptions: TransitOptions,
+
+                avoidHighways: false,//计算起点与终点之间的路线时将尽可能避免公路
+                avoidTolls: false//计算两点之间的路线时将尽可能使用非收费路线
+            }, function (response, status) {
+                res(response, status)
+            });
+        }
+    });
+}
+
+/***
+ * 反向地理编码、获取地址
+ * @param LatLng1 坐标就可以
+ */
+function reverseCoding(LatLng) {
+    return new Promise(function (res, err) {
+        var latlng = {lat: parseFloat(LatLng[0]), lng: parseFloat(LatLng[1])};
+        var geocoder = new google.maps.Geocoder;
+        geocoder.geocode({'location': latlng}, function (results, status) {
+            if (status === 'OK') {
+                res(results[0].formatted_address);
+            } else {
+                res('暂无');
+            }
+        });
+    });
+}
+
+/***
+ * 交通方法之线路切换
+ * @param LatLng1 起点
+ * @param LatLng2 终点
+ * @param type  string 交通类型
+ */
+function directionsMome(LatLng1, LatLng2, type, index) {
+    console.log(type, index, LatLng1, LatLng2);
+    return new Promise(function (res, err) {
+        //服务器和绘画
+        var directionsDisplay = new google.maps.DirectionsRenderer;
+        var directionsService = new google.maps.DirectionsService;
+        //地图
+        map = new google.maps.Map(document.getElementById('nearMapTransition'), {
+            zoom: 12,
+            center: {lat: Number(LatLng1[0]), lng: Number(LatLng1[1])},
+            gestureHandling: 'greedy'
+        });
+        // 开始绘画
+        directionsDisplay.setMap(map);
+        directionsDisplay.setPanel(null);
+        directionsDisplay.setPanel(document.getElementsByClassName('near-trffic-list')[index]);
+
+        //初始化
+        calculateAndDisplayRoute(directionsService, directionsDisplay);
+
+        function calculateAndDisplayRoute(directionsService, directionsDisplay) {
+            directionsService.route({
+                destination: {lat: Number(LatLng1[0]), lng: Number(LatLng1[1])},
+                origin: {lat: Number(LatLng2[0]), lng: Number(LatLng2[1])},
+                travelMode: google.maps.TravelMode[type]
+            }, function (response, status) {
+                if (status == 'OK') {
+                    directionsDisplay.setDirections(response);//绘画线路
+                    res(response);
+                } else {
+                    res(response);
+                }
+            });
+        }
+    });
+
+}
+
+//自定义信息图层
+function mapsOverlayView() {
+    USGSOverlay.prototype = new google.maps.OverlayView();
+
+    function USGSOverlay(bounds, html, labelNum, map, styleFN) {
+        this.bounds_ = bounds;
+        this.html_ = html;
+        this.labelNum_ = labelNum;
+        this.map_ = map;
+        this.div_ = null;
+        this.setMap(map);
+        this.styleFN = styleFN;
+    }
+
+
+    USGSOverlay.prototype.onAdd = function () {
+        this.div_ = this.styleFN();
+        // Add the element to the "overlayImage" pane.
+        var panes = this.getPanes();
+        panes.overlayImage.appendChild(this.div_);
+    };
+    USGSOverlay.prototype.draw = function () {
+        var overlayProjection = this.getProjection();
+        var sw = overlayProjection.fromLatLngToDivPixel(this.bounds_.getSouthWest());
+        var ne = overlayProjection.fromLatLngToDivPixel(this.bounds_.getNorthEast());
+        var div = this.div_;
+        div.style.left = sw.x + 'px';
+        div.style.top = ne.y + 'px';
+        div.style.width = (ne.x - sw.x) + 'px';
+        div.style.height = (sw.y - ne.y) + 'px';
+    };
+    USGSOverlay.prototype.onRemove = function () {
+        if (this.div_.parentNode == null) {
+            return false
+        } else {
+            this.div_.parentNode.removeChild(this.div_);
+        }
+    };
+    USGSOverlay.prototype.hide = function () {
+        if (this.div_) {
+            // The visibility property must be a string enclosed in quotes.
+            this.div_.style.visibility = 'hidden';
+        }
+    };
+    USGSOverlay.prototype.show = function () {
+        if (this.div_) {
+            this.div_.style.visibility = 'visible';
+        }
+    };
+    USGSOverlay.prototype.toggle = function () {
+        if (this.div_) {
+            if (this.div_.style.visibility === 'hidden') {
+                this.show();
+            } else {
+                this.hide();
+            }
+        }
+    };
+    USGSOverlay.prototype.toggleDOM = function () {
+        if (this.getMap()) {
+            // Note: setMap(null) calls OverlayView.onRemove()
+            this.setMap(null);
+        } else {
+            this.setMap(this.map_);
+        }
+    };
+    USGSOverlay.prototype.delDOM = function () {
+        if (this.getMap()) {
+            // Note: setMap(null) calls OverlayView.onRemove()
+            this.setMap(null);
+        }
+    };
+    window.USGSOverlay = USGSOverlay;
+}
+
+//数字转中文
+function intToChinese(str) {
+    str = str + '';
+    var len = str.length - 1;
+    var idxs = ['', '十', '百', '千', '万', '十', '百', '千', '亿', '十', '百', '千', '万', '十', '百', '千', '亿'];
+    var num = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    return str.replace(/([1-9]|0+)/g, function ($, $1, idx, full) {
+        var pos = 0;
+        if ($1[0] != '0') {
+            pos = len - idx;
+            if (idx == 0 && $1[0] == 1 && idxs[len - idx] == '十') {
+                return idxs[len - idx];
+            }
+            return num[$1[0]] + idxs[len - idx];
+        } else {
+            var left = len - idx;
+            var right = len - idx + $1.length;
+            if (Math.floor(right / 4) - Math.floor(left / 4) > 0) {
+                pos = left - left % 4;
+            }
+            if (pos) {
+                return idxs[pos] + num[$1[0]];
+            } else if (idx + $1.length >= len) {
+                return '';
+            } else {
+                return num[$1[0]]
+            }
+        }
+    });
+}
+
+// 全局对象
+var pId = GetQueryString('id');
+
+
+var thereadyDay = GetQueryString('dayliSTArray');
+var DATAID = thereadyDay.split(",");
+
+
+//用来预解析
+var LatLng1YJX = [$('.near-place:last').attr('data-x'), $('.near-place:last').attr('data-y')];
+
+//行程排序间
+function get_plan_sort() {
+    for (var i = 0; i < $("#showDaytravl .n-placeLi").length; i++) {
+        var j = i + 1;
+        $("#showDaytravl .n-placeLi .sceneryNum11").eq(i).text(j + '.');
+    }
+}
+
+//业务逻辑
+$(function () {
+    //隐藏周边
+    $(document).on("click", ".canceNear", function () {
+        $(".page-near").addClass("pull-hidden");
+    });
+
+    //摊开周边
+    $(document).on("click", ".n-placeLi .li-check", function () {
+        $(".page-near").removeClass("pull-hidden").removeClass("pull-show");
+        $(this).parents('.near-place').addClass('active').siblings().removeClass('active');
+        $('#jsTypeTX').text('景点');
+        getMinNeraData(0);
+
+        $('#nearMapTransition').empty();
+        var lat = $(this).parents('.near-place').attr('data-x');
+        var lng = $(this).parents('.near-place').attr('data-y');
+        maplace = new google.maps.Map(document.getElementById('nearMapTransition'), {
+            zoom: 12,
+            center: new google.maps.LatLng(Number(lat), Number(lng)),
+            gestureHandling: 'greedy'
+        });
+        load_map();
+    });
+
+    //点击查看详情 弹出详情
+    $(document).on("click", '.nearUl li .liList', function () {
+        $(".ins-pop").addClass("active");
+        $(this).parents('li').addClass('forAgainAdd').siblings().removeClass('forAgainAdd');
+        var $id = $(this).parents('li').attr('data-siteid');
+        showlistData($id);
+    });
+
+    //展开更多
+    $(document).on('click', '#showAllText', function () {
+        $('#toggleText').toggleClass('killME');
+
+        var text = $(this).find('.text');
+        if (text.text() == '展开全部') {
+            text.text('收起内容');
+            $(this).find('i').css({display: 'inline-block', transform: 'rotate(180deg)'});
+        } else {
+            text.text('展开全部');
+            $(this).find('i').css({display: 'inline-block', transform: 'rotate(360deg)'});
+        }
+    });
+
+    //关闭查看详情
+    $(document).on("click", ".ins-pop-close", function () {
+        $(".ins-pop").removeClass("active");
+    });
+
+    //交通方式展开
+    $(document).on("click", ".trffic-b .ico", function () {
+        $(this).parents("li").toggleClass("on");
+    });
+
+    //弹出交通列表
+    $(document).on("click", ".nscenList .checkTrffic", function () {
+        $('.checkTrffic').removeClass('checkOn');
+        $(this).addClass('checkOn');
+        $(".page-near").removeClass("pull-hidden").addClass("pull-show");
+        var $originNearPlace = $(this).parents('.near-place');
+        var $startNearPlace = $(this).parents('.near-place').prev();
+        $(".near-trffic-hd a").eq(0).addClass("on").siblings().removeClass("on");
+        $(".near-trffic-bd").find(".near-trffic-list").hide().eq(0).show();
+
+        var LatLng1 = [$originNearPlace.attr('data-x'), $originNearPlace.attr('data-y')];
+        var LatLng2 = [$startNearPlace.attr('data-x'), $startNearPlace.attr('data-y')];
+        var Title1 = $originNearPlace.find('.jsForNearTit').text();
+        var Title2 = $originNearPlace.prev().find('.jsForNearTit').text();
+
+        $('#oransta').attr({
+            'LatLng1': LatLng1,
+            'LatLng2': LatLng2,
+            'Title1': Title1,
+            'Title2': Title2
+
+        });
+        $('.near-trffic-list').empty();
+        showTravelLine(LatLng1, LatLng2, 'TRANSIT', 0)
+    });
+
+    //关闭交通弹窗
+    $(document).on("click", ".near-trffic-close", function () {
+        $(".page-near").removeClass("pull-show").addClass("pull-hidden");
+    });
+
+    //交通方式切换
+    $(document).on("click", ".near-trffic-hd a", function () {
+        var num = $(this).index();
+        $(this).addClass("on").siblings().removeClass("on");
+        $(".near-trffic-bd").find(".near-trffic-list").hide().eq(num).show();
+        $('.near-trffic-list').empty();
+
+        var LatLng1 = $(this).parents('#oransta').attr('LatLng1');
+        var LatLng2 = $(this).parents('#oransta').attr('LatLng2');
+        var index = $(this).index();
+        var typeArray = ["TRANSIT", "DRIVING", "WALKING", "BICYCLING"];
+        var type = typeArray[index];
+        showTravelLine(LatLng1, LatLng2, type, index);
+    });
+
+    // 选择交通方式
+    $('.near-trffic-list').on("click", ".choseBtn123", function () {
+        var choseA = $('.near-trffic-hd a.on');
+        var index = choseA.index();
+        var $checkOn = $('.checkOn');
+        var iconArray = ['icon iconfont icon-yinhang', 'icon iconfont icon-jiache', 'icon iconfont icon-buhang', 'icon iconfont icon-xinxinicon'];
+        $checkOn.parents('.place-traffic').find('i').removeClass().addClass(iconArray[index]);
+        var text = $('.adp-summary').text();
+        console.log(text);
+        $checkOn.parents('.place-traffic').find('.traffic-text').text(text);
+        var RouteId = $checkOn.parents('.near-place').attr('route_id');
+
+        $(".choseBtn123").removeClass('on');
+        $(this).addClass('on');
+        $(this).text('已选');
+        $checkOn.parents('.place-traffic').find('i').attr('data-ico', index);
+
+        //距离和地址扔到接口
+        var addDATA = {
+            'url': '/plan/ajaxspot/',
+            'dato': {
+                Intention: 'EditTraffic',
+                PlanId: pId,
+                DayId: Number($('#firstSetDay').attr('data-day')), //天id
+                RouteId: RouteId,
+                TrafficType: index,
+                TrafficInfo: text
+            }
+        };
+
+        apiRequest(addDATA, function (zt, res) {
+            if (res.ResultCode == '200') {
+                // layer.msg('交通方式更换成功')
+            } else {
+                layer.msg(res.Message);
+            }
+        });
+
+    });
+
+    // 右侧列表详情
+    $('#ScenList').on('click', 'li .jsChairData', function () {
+        $(this).parents('li').addClass('forAgainAdd').siblings().removeClass('forAgainAdd');
+        var $id = $(this).parents('li').attr('site-id');
+        showlistData($id);
+    });
+
+    // 初次渲染
+    get_route_plan(GetQueryString('dataId')).then(function () {
+        // getMinNeraData(9);
+        mapsOverlayView();
+        if (GetQueryString('checkType') == '2') {//交通
+            $('.near-place[site-id=' + GetQueryString('siteId') + ']').find('.checkTrffic').trigger('click');
+        } else {
+            $('.near-place[site-id=' + GetQueryString('siteId') + ']').find('.li-check').trigger('click');
+        }
+
+    }).then(function () {
+        // mapsOverlayView();
+        // load_map();
+    });
+    showHowDayNum();
+
+    //左侧渲染多少天
+    function showHowDayNum() {
+        var html = '';
+        for (var i = 0; i < Number(GetQueryString('dayLen')); i++) {
+            html += '<a href="javascript:void(0);">第' + intToChinese(i + 1) + '天</a>';
+        }
+        $('#checkTheDayId').append(html);
+    }
+
+    // 左侧选择第几天
+    $('#checkTheDayId').find('a').click(function () {
+        var readyDay = Number(DATAID[$(this).index()]);
+        get_route_plan(readyDay.toString()).then(function () {
+            var $num = Number($('#jsTypeTX').attr('data-type'));
+
+
+            getMinNeraData($num);
+        }).then(function () {
+            $('#nearMapTransition').empty();
+            var nearPlace = $('.near-place.active');
+            if (nearPlace.length !== 0) {
+                var lat = nearPlace.attr('data-x');
+                var lng = nearPlace.attr('data-y');
+            } else {
+                var lat = GetQueryString('lat');
+                var lng = GetQueryString('lng');
+            }
+
+            console.log(lat, lng);
+            maplace = new google.maps.Map(document.getElementById('nearMapTransition'), {
+                zoom: 12,
+                center: new google.maps.LatLng(Number(lat), Number(lng)),
+                gestureHandling: 'greedy'
+            });
+            load_map();
+        });
+    });
+
+    // 周边类型选择
+    $('#jsTypeOF').on('click', 'a', function () {
+        var $text = $(this).text();
+        var $index = $(this).index();
+        $('#jsTypeTX').text($text).attr('data-type', $index);
+        getMinNeraData($index);
+    });
+
+    // 左侧的保存编辑
+    $('#jsSavrAll,.layui-layer-close,.page-close').click(function () {
+        // parent.location.reload()
+        window.parent.postMessage(Number($('#firstSetDay').attr('data-day')), '*');
+    });
+
+    //左侧行程删除
+    $('#showDaytravl').on('click', '.li-close', function () {
+        deleLeftDATA.call(this).then(function (data) {
+            if (data == 'ok') {
+                load_map();
+            }
+        });
+
+    });
+
+    function deleLeftDATA() {
+        // console.log($(this));
+        var $thisDom = $(this).parents('.near-place');
+        return new Promise(function (RES, err) {
+            var $thisOoM1 = $thisDom.prev();
+            var $thisOoM2 = $thisDom.next();
+            var $thisOoM1dix = $thisDom.prev().find('.place-traffic');
+            var $thisOoM2dix = $thisDom.next().find('.place-traffic');
+
+            // console.log($thisOoM1, $thisOoM2);
+            var $thisId = $thisDom.attr('route_id');
+            var $thisId2 = $thisOoM2.attr('route_id');
+            var $thisDomsiteId = $thisDom.attr('site-id');
+
+            //删除窗口html拼接与定位
+            var delDom = $("#showDaytravl").find(".near-place[route_id=" + $thisId + "] .li-close");
+            var delHtml = '<div style="width: 250px; height: 150px;">';
+            delHtml += '<h2 style="font-weight: normal; color: #000;height: 40px; line-height: 40px; font-size: 14px; padding-left: 18px; border-bottom: 1px solid #dedede">操作</h2>';
+            delHtml += '<p style="padding: 20px; color: #333; font-size: 13px;">您确定删除这个安排吗？</p>';
+            delHtml += '<div class="layui-layer-btn" style="position: absolute; bottom: 0; left: 0; right: 0;"><a class="layui-layer-btn0">确定</a><a class="layui-layer-btn1">取消</a></div>';
+            delHtml += '</div>';
+            //弹出删除窗口
+            layer.tips(delHtml, delDom, {
+                tips: [3, '#fff'],
+                time: 2000002,
+                closeBtn: 1,
+                yes: function (index) {
+                    var ajaxData = {
+                        'url': '/plan/ajaxspot/',
+                        'dato': {
+                            'Intention': "DelRoutePlan", //方法
+                            'PlanId': pId, //此行程id
+                            'DayId': Number($('#firstSetDay').attr('data-day')), //天id
+                            'RouteId': $thisId //行程id
+                        }
+                    };
+                    apiRequest(ajaxData, function (zt, res) {
+                        if (res.ResultCode == '200') {
+                            layer.close(index);
+                            $('#jsAddNear').find('li[data-siteid=' + $thisDomsiteId + ']').removeClass('on');
+                            layer.msg(res.Message);
+                            //重新排序
+                            get_plan_sort();
+                            var $siteid = $thisDom.attr('site-id');
+                            $('#jsAddNear').find("li[data-siteid=" + $siteid + "] .liList ").removeClass('forAgainAdd').css({background: '#fb5348'});
+                            // console.log($thisOoM1, $thisOoM2);
+                            //更新相距公里更新成功
+                            if ($thisOoM1.length === 0) {
+                                $thisOoM2dix.remove();
+                                $thisDom.remove();
+                                RES('ok');
+                                return false;
+                            } else if ($thisOoM2.length === 0) {
+                                $thisDom.remove();
+                                RES('ok');
+                                return false;
+                            } else {
+                                var MatrixData11 = null;
+                                var kilometreStr = null;
+                                var LatLng1 = [$thisOoM1.attr('data-x'), $thisOoM1.attr('data-y')];
+                                var LatLng2 = [$thisOoM2.attr('data-x'), $thisOoM2.attr('data-y')];
+                                // console.log(LatLng1);
+                                Matrix(LatLng1, LatLng2, 'DRIVING').then(function (response, status) {
+                                    $thisDom.remove();
+                                    MatrixData = response.rows[0].elements[0];
+                                    kilometreStr += '<div class="place-traffic" >';
+                                    kilometreStr += '<span class="ico"><i class="icon iconfont icon-jiache"></i></span>';
+                                    kilometreStr += '<span class="traffic-text" style="font-size: 12px;">相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text + ' </span>';
+                                    kilometreStr += '</div>';
+                                    MatrixData11 = '相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text;
+
+                                    var addDATA = {
+                                        'url': '/plan/ajaxspot/',
+                                        'dato': {
+                                            Intention: 'EditTraffic',
+                                            PlanId: pId,
+                                            DayId: $('#firstSetDay').attr('data-day'),
+                                            RouteId: $thisId2,
+                                            TrafficType: 1,
+                                            TrafficInfo: MatrixData11
+                                        }
+                                    };
+                                    apiRequest(addDATA, function (zt, res) {
+                                        if (res.ResultCode == '200') {
+                                            // console.log(res.Message);
+                                            //加载新数据
+                                            get_route_plan(ajaxData.dato.DayId);
+                                        } else {
+                                            layer.msg(res.Message);
+                                        }
+
+
+                                    });
+                                });
+                                RES('ok');
+                            }
+                        } else {
+                            layer.msg(res.Message);
+                            get_plan_sort();
+                            RES('ok');
+                        }
+                    });
+                }
+            });
+            //删除窗口定位位置
+            var tipleft = parseFloat($(".layui-layer-tips").css("left"));
+            $(".layui-layer-tips").css({'left': tipleft});
+            $(".layui-layer-tips").css("width", "auto");
+            $(".layui-layer-tips .layui-layer-TipsG").hide();
+            $(".layui-layer-tips .layui-layer-content").css({padding: 0});
+            $(".layui-layer-tips .layui-layer-content").css('box-shadow', "0 0 10px rgba(0,0,0, .4)");
+        });
+    }
+
+    // 左侧行程添加
+    $('#jsAddNear,#showPoP').on('click', 'li span.add-plan, .addRoute', function () {
+        var that = this;
+        var $agad = $('#jsAddNear').find('li.forAgainAdd');
+        console.log($agad.length);
+        if ($agad.length !== 0) {
+            var $thisDom = $agad
+        } else {
+            var $thisDom = $(that).parents('li');
+        }
+        if ($thisDom.hasClass('on')) {
+            layer.msg('该行程已经添加');
+            return false;
+        }
+
+        //地理位置
+        var LatLngAddress = [$thisDom.attr('data-x'), $thisDom.attr('data-y')];
+        reverseCoding(LatLngAddress).then(function (data) {
+            var ajaxData = {
+                'url': '/plan/ajaxspot/',
+                'dato': {
+                    'Intention': "AddRoutePlan", //方法
+                    'PlanId': pId, //此行程id
+                    'DayId': Number($('#firstSetDay').attr('data-day')), //天id
+                    'Type': $('#jsTypeTX').attr('data-type'), //类型
+                    "Site_Id": $thisDom.attr('data-siteid'), //地点id
+                    "Title": $thisDom.attr('data-title'),
+                    "Isdo": "0", //是否必去
+                    "lat": $thisDom.attr('data-x'), //坐标x
+                    "lon": $thisDom.attr('data-y'),//坐标y
+                    'Image': $thisDom.attr('data-image'),
+                    'Address': data
+                }
+            };
+            add_route_plan(ajaxData, $thisDom).then(function () {
+                load_map();
+            });
+            $thisDom.find('.num').css({background: '#09a3f3'});
+            // console.log($thisDom);
+            $thisDom.addClass('on');
+
+        });
+    });
+
+    //获取左侧数据添加相关操作
+    function add_route_plan(ajaxData, thisDom) {
+        // console.log('创建了创建了');
+        return new Promise(function (RES, err) {
+            var AddressData = '暂无';
+            var MatrixData = '';
+            var MatrixData11 = '';
+            var kilometreStr = '';
+
+            if (thisDom.attr('data-x') != 0 && thisDom.attr('data-x') != undefined) {//有坐标数据才请求
+                // 地理位置
+                if (thisDom !== undefined) {
+                    var LatLngAddress = [thisDom.attr('data-x'), thisDom.attr('data-y')];
+                    reverseCoding(LatLngAddress).then(function (data) {
+                        AddressData = data;
+                    });
+                }
+                //相距公里html
+                if ($('.near-place').length > 0 && LatLng1YJX != null && LatLng1YJX != 'undefined') {
+                    // var LatLng1 = [$('.near-place:last').attr('data-x'), $('.near-place:last').attr('data-y')];
+                    var LatLng2 = [thisDom.attr('data-x'), thisDom.attr('data-y')];
+                    // console.log(LatLng1YJX);
+                    Matrix(LatLng1YJX, LatLng2, 'DRIVING').then(function (response, status) {
+                        MatrixData = response.rows[0].elements[0];
+                        kilometreStr += '<div class="place-traffic">';
+                        kilometreStr += '<span class="ico"><i class="icon iconfont icon-jiache"></i></span>';
+                        kilometreStr += '<span class="traffic-text" style="font-size: 12px;">相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text + ' </span>';
+                        kilometreStr += '<a href="javascript:void(0);" class="checkTrffic" style="font-size: 12px;" >查看</a>';
+                        kilometreStr += '</div>';
+                        MatrixData11 = '相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text;
+                    });
+
+
+                }
+
+                LatLng1YJX = [thisDom.attr('data-x'), thisDom.attr('data-y')];//利用预解析后复制存储上一个值
+            }
+
+
+            apiRequest(ajaxData, function (zt, res) {
+                    if (res.ResultCode == '200') {
+                        var val = ajaxData.dato;
+                        // console.log(res);
+                        var html = '';
+                        html += '<div class="near-place " data-Isdo="' + val.Isdo + '"  route_id="' + res.Route_Id + '" data-type="' + val.Type + '" site-id="' + val.Site_Id + '" data-x="' + val.lat + '" data-y="' + val.lon + '" data-isdo="' + val.Isdo + '">';
+                        if (kilometreStr !== '') {
+                            html += kilometreStr;
+                        }
+                        html += '<div class="n-placeLi">';
+                        html += '<span class="li-close"><i class="icon iconfont icon-dacha"></i></span>';
+                        html += '<span class="fr li-check">查看周边</span>';
+                        html += '<span class="num fl sceneryNum11"></span>';
+                        html += '<span class="place-name fl"><span class="jsForNearTit">' + val.Title + '</span></span>';
+                        html += '</div>';
+
+                        html += '</div>';
+                        $("#showDaytravl").find('.nscenList').append(html);
+                        //行程排序
+                        get_plan_sort();
+
+                        if ($('.near-place').length < 2) {
+                            MatrixData11 = '';
+                        }
+
+                        //距离和地址扔到接口
+                        var addDATA = {
+                            'url': '/plan/ajaxspot/',
+                            'dato': {
+                                Intention: 'EditTraffic',
+                                PlanId: pId,
+                                DayId: Number($('#firstSetDay').attr('data-day')), //天id
+                                RouteId: res.Route_Id,
+                                TrafficType: 1,
+                                TrafficInfo: MatrixData11
+                            }
+                        };
+
+                        apiRequest(addDATA, function (zt, res) {
+                            if (res.ResultCode == '200') {
+
+                            } else {
+                                layer.msg(res.Message);
+                            }
+                        });
+                        //行程排序
+                        get_plan_sort();
+                        layer.msg(res.Message);
+                        RES('ok')
+
+                    } else {
+                        get_plan_sort();
+                        layer.msg(res.Message);
+                        RES('ok')
+                    }
+                }
+            );
+
+        });
+    }
+
+
+    //获取左侧数据获取相关操作
+    function get_route_plan(dataid) {
+        // console.log('请求了请求了');
+        return new Promise(function (RES, err) {
+            var ajaxData = {
+                'url': "/plan/ajaxspot/",
+                'dato': {
+                    'Intention': 'EditRoutePlan', //方法
+                    'PlanId': pId, //此行程id
+                    'DayId': dataid, //天id
+                }
+            };
+
+            apiRequest(ajaxData, function (zt, res) {
+                var $firstSetDay = $('#firstSetDay');
+                var dataii = Number($.inArray(dataid, DATAID)) + 1;
+
+                $firstSetDay.text('第 ' + intToChinese(dataii) + '天行程');
+                $firstSetDay.attr('data-day', Number(dataid));
+                if (res.ResultCode == '200') {
+                    //清空行程安排所有数据
+                    $("#showDaytravl").find('.nscenList').empty();
+                    //当行程安排为空时exit
+                    if (res.Route == '' && res.Route == null && res.Route == undefined) {
+                        return
+                    }
+                    var val = ajaxData.dato;
+                    //拼接行程安排html
+                    var html = '';
+                    //Type 0景点 1餐馆 2酒店 3购物 4交通 5自定义  Kind 0景点 1餐馆 2酒店 3购物 4交通
+                    $.each(res.Route, function (i, list) {
+                        if (i == 0) {
+                            html += '<div class="near-place active"  data-id="' + Number(dataid) + '"      Route_Id="' + list.Route_Id + '" data-type="' + list.Type + '" site-id="' + list.Site_Id + '" data-x="' + list.lat + '" data-y="' + list.lon + '" data-isdo="' + list.Isdo + '"> ';
+                        } else {
+                            html += '<div class="near-place " data-id="' + Number(dataid) + '"      data-Isdo="' + list.Isdo + '"  Route_Id="' + list.Route_Id + '" data-type="' + list.Type + '" site-id="' + list.Site_Id + '" data-x="' + list.lat + '" data-y="' + list.lon + '" data-isdo="' + list.Isdo + '">';
+                        }
+
+                        if (list.TrafficInfo !== '' && list.TrafficInfo !== null) {//相距公里
+                            html += '<div class="place-traffic">';
+                            var iconArray = ['icon iconfont icon-yinhang', 'icon iconfont icon-jiache', 'icon iconfont icon-buhang', 'icon iconfont icon-xinxinicon'];
+                            html += '<span class="ico"><i class="' + iconArray[list.TrafficType] + '" data-ico="' + list.TrafficType + '"></i></span>';
+                            html += '<span class="traffic-text" style="font-size: 12px;">' + list.TrafficInfo + ' </span>';
+                            html += '<a href="javascript:void(0);" class="checkTrffic" style="font-size: 12px;">查看</a>';
+                            html += '</div>'
+                        }
+                        if (list.Type != '4' && list.Kind != '4') {
+                            html += '<div class="n-placeLi">';
+                            html += '<span class="li-close"><i class="icon iconfont icon-dacha"></i></span>';
+                            if (list.lat) {
+                                html += '<span class="fr li-check">查看周边</span>';
+                            }
+                            html += '<span class="num fl sceneryNum11"></span>';
+                            html += '<span class="place-name fl"><span class="jsForNearTit">' + list.Title + '</span></span>';
+                            html += '</div>';
+                        }
+                        html += '</div>';
+                    });
+                    $("#showDaytravl").find('.nscenList').append(html);
+                    RES('ok');
+                    //用来预解析
+                    LatLng1YJX = [$('.near-place:last').attr('data-x'), $('.near-place:last').attr('data-y')];
+                    //行程排序
+                    get_plan_sort();
+                } else if (res.ResultCode == '100') {
+                    $("#showDaytravl").find('.nscenList').empty();
+                    $("#showDaytravl").find('.nscenList').append('<p style="text-align: center;"> 这一天没有数据请添加</p>');
+                    RES('ok');
+                    //用来预解析
+                    LatLng1YJX = [$('.near-place:last').attr('data-x'), $('.near-place:last').attr('data-y')];
+                } else {
+                    layer.msg(res.Message);
+                    RES('ok');
+                    //用来预解析
+                    LatLng1YJX = [$('.near-place:last').attr('data-x'), $('.near-place:last').attr('data-y')];
+                }
+            });
+        })
+    }
+
+
+    //获取中间数据
+    // var markersNevar = [];
+    var USGSOverlayX2Array = [];
+    var USGSOverlayX2 = '';
+
+    function getMinNeraData(NUM) {
+        var abcd = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+        var $nearPlace = $('.near-place.active');
+        $('#minNearTitle').text($nearPlace.find('span.jsForNearTit').text());
+        var $checkID = $nearPlace.attr('site-id');
+        var $lat = $nearPlace.attr('data-x');
+        var $sAddNear = $('#jsAddNear');
+        $sAddNear.empty();
+        // if (markersNevar) {
+        //     for (var i = 0; i < markersNevar.length; i++) {
+        //         markersNevar[i].setMap(null);
+        //     }
+        //     markersNevar = [];
+        // }
+
+        if (isNaN(Number($checkID)) || $lat == '0' || $lat == undefined) {
+            var noHtml = '<div style="text-align: center;margin-top: 10px;">暂无信息</div>';
+            $sAddNear.append(noHtml);
+            return false;
+        }
+        console.log(USGSOverlayX2Array);
+        if (USGSOverlayX2Array) {
+            for (var i = 0; i < USGSOverlayX2Array.length; i++) {
+                USGSOverlayX2Array[i].onRemove();
+            }
+        }
+        return new Promise(function (RES, err) {
+            var ajaxData = {
+                'url': "/plan/ajaxspot/",
+                'dato': {
+                    'Intention': 'GetPlaceAround', //方法
+                    'PlanId': pId, //此行程id
+                    'DayId': Number($('#firstSetDay').attr('data-day')), //天id
+                    'Id': Number($checkID),
+                    'Type': NUM,
+                    'Lat': $nearPlace.attr('data-x'),
+                    'Lng': $nearPlace.attr('data-y')
+                }
+            };
+            apiRequest(ajaxData, function (zt, res) {
+                if (res.ResultCode == '200') {
+
+                    if (res.Data == '') {
+                        var noHtml = '<div style="text-align: center;margin-top: 10px;">暂无信息</div>';
+                        $sAddNear.append(noHtml);
+                    } else {
+                        var html = '';
+                        $.each(res.Data, function (key, val) {
+
+                            if (val.Checked == '1') {
+                                html += '<li  class="on" data-EnName="' + val.EnName + '"  data-Image="' + val.Image + '" data-y="' + val.Lng + '" ' +
+                                    'data-x="' + val.Lat + '" data-Type="' + val.Type + '" data-Checked="' + val.Checked + '" data-SiteID="' + val.SiteID + '" data-title="' + val.CnName + '">';
+                            } else {
+                                html += '<li  data-EnName="' + val.EnName + '"  data-Image="' + val.Image + '" data-y="' + val.Lng + '" ' +
+                                    'data-x="' + val.Lat + '" data-Type="' + val.Type + '" data-Checked="' + val.Checked + '" data-SiteID="' + val.SiteID + '" data-title="' + val.CnName + '">';
+                            }
+
+                            html += '<div class="liList">';
+                            html += '<span class="way-long fr">' + (val.Distance / 1000) + '公里</span>';
+                            if (key > 25) {
+
+                                var label = abcd[parseInt((key) / 26) - 1] + '' + abcd[(key) % 26];
+                                if (val.Checked == '1') {
+                                    html += '<span class="num fl " style="background-color: #09a3f3;">' + abcd[parseInt((key) / 26) - 1] + '' + abcd[(key) % 26] + '</span>';
+                                } else {
+                                    html += '<span class="num fl">' + abcd[parseInt((key) / 26) - 1] + '' + abcd[(key) % 26] + '</span>';
+                                }
+                            } else {
+                                var label = abcd[key];
+                                if (val.Checked == '1') {
+                                    html += '<span class="num fl " style="background-color: #09a3f3;">' + abcd[key] + '</span>';
+                                } else {
+                                    html += '<span class="num fl">' + abcd[key] + '</span>';
+                                }
+                            }
+                            html += '<span class="liList-name fl">' + val.CnName + '</span>';
+                            html += '</div>';
+                            html += '<span class="add-plan">+插入行程</span>';
+                            html += '</li>';
+
+                            var latLng = new google.maps.LatLng(val.Lat, val.Lng);
+
+                            // 改为自定义marker图层
+                            function styleFN() {
+                                var div = document.createElement('div');
+                                div.style.border = '0';
+                                div.style.position = 'absolute';
+
+                                // Create the img element and attach it to the div.
+                                var cDiv = document.createElement("div");
+                                cDiv.style.backgroundImage = 'url(http://images.57us.com/img/plan/v1.1/map.png)';
+                                cDiv.style.height = "46px";
+                                cDiv.style.width = "24px";
+                                cDiv.style.lineHeight = "26px";
+                                cDiv.style.position = "absolute";
+                                cDiv.style.left = "-10px";
+                                cDiv.style.top = "-38px";
+                                cDiv.style.color = "#fb5348";
+                                cDiv.style.textAlign = "center";
+                                cDiv.style.fontweight = "bold";
+                                var html = this.html_;
+                                cDiv.innerHTML = html;
+                                div.appendChild(cDiv);
+                                return div;
+                            }
+
+
+                            var bounds = new google.maps.LatLngBounds(latLng);
+                            USGSOverlayX2 = new USGSOverlay(bounds, label, key + 1, maplace, styleFN);
+                            USGSOverlayX2Array.push(USGSOverlayX2);
+                            // var marker = new google.maps.Marker({
+                            //     title: val.CnName,
+                            //     label: '' + label,
+                            //     position: latLng,
+                            //     map: maplace
+                            // });
+
+                            // markersNevar.push(marker);
+
+                        });
+                        $sAddNear.append(html);
+                    }
+                } else {
+                    layer.msg(res.Message);
+                }
+
+            });
+        })
+    }
+
+
+    //拖拽组件(左侧)
+    var sceneryList = document.getElementById("drowingDiv");
+    var SortableSTARTDAta1 = null;
+    var SortableSTARTDAta2 = null;
+    var upArray = [];
+    new Sortable(sceneryList, {
+        onUpdate: function (evt) { //游览器dom位置变化完后 更多看说明  http://www.jb51.net/article/96446.htm
+            var RouteSort = [];
+            $("#showDaytravl .near-place ").each(function () {
+                RouteSort.push($(this).attr('route_id'));
+            });
+            //ajax提交排序
+            var ajaxData = {
+                'url': '/plan/ajaxspot/',
+                'dato': {
+                    'Intention': "RoutePlanSort", //方法
+                    'PlanId': pId, //此行程id
+                    'DayId': Number($('#firstSetDay').attr('data-day')), //天id
+                    'RouteSort': RouteSort, //新的排序，数组
+                }
+            };
+            apiRequest(ajaxData, function (zt, res) {
+                if (res.ResultCode == '200') {
+                    // layer.msg(res.Message);
+                } else {
+                    layer.msg(res.Message);
+                }
+            });
+
+            //重新排序
+            get_plan_sort();
+        },
+        onStart: function (evt) {
+            console.log(1);
+            var startNowDom = $(evt.item);
+            var startNxetDom = startNowDom.next();
+            var startPrevDom = startNowDom.prev();
+
+            SortableSTARTDAta1 = startNxetDom.attr('route_id');
+            SortableSTARTDAta2 = startPrevDom.attr('route_id');
+            upArray.push(startNowDom.attr('route_id'));
+            upArray.push(SortableSTARTDAta1);
+        },
+        onEnd: function (evt) {//拖拽完毕之后发生该事件
+            var startNowDom = $(evt.item);
+            var startNxetDom = startNowDom.next();
+            var startPrevDom = startNowDom.prev();
+
+            var startNxetDomID = startNxetDom.attr('route_id');
+            var startPrevDomID = startPrevDom.attr('route_id');
+            // upArray.push(Number(startPrevDomID));
+            upArray.push(startNxetDomID);
+            if (SortableSTARTDAta1 === startNxetDomID || SortableSTARTDAta2 === startPrevDomID) {
+                console.log('没变动');
+                return false; // 没变动
+            }
+
+            //用来预解析
+            LatLng1YJX = [$('.near-place:last').attr('data-x'), $('.near-place:last').attr('data-y')];
+
+            var originsArray = [];
+            var destinationsArray = [];
+            var evenAnrray = $(".near-place:even").toArray();
+            var oddnrray = $(".near-place:odd").toArray();
+
+
+            function checkArray(typeArray, puArray) {
+                for (var i = 0; i < typeArray.length; i++) {
+                    var xx = $(typeArray).eq(i).attr('data-x');
+                    var yy = $(typeArray).eq(i).attr('data-y');
+                    puArray.push(new google.maps.LatLng(xx, yy))
+                }
+                return puArray;
+            }
+
+            var DrivingOptions = {
+                departureTime: new Date(Date.now() + 1),
+                trafficModel: 'bestguess'
+            };
+
+            var service = new google.maps.DistanceMatrixService();
+            service.getDistanceMatrix({
+                origins: checkArray(evenAnrray, originsArray),
+                destinations: checkArray(oddnrray, destinationsArray),
+                travelMode: 'DRIVING',
+                // drivingOptions: DrivingOptions,
+                avoidHighways: false,
+                avoidTolls: false
+            }, callback11);
+
+            function callback11(response, status) {
+                console.log(response);
+                //公里
+                var MatrixDataEven = [];
+                var MatrixDataOdd = [''];
+                var MatrixDataAll = [];
+
+                //id
+                var dataIDEVen = [];
+                var dataIDOdd = [];
+                var dataIAll = [];
+
+                //交通
+                var TrafficTypeArray = [];
+                for (var i = 0; i < $('.near-place').length; i++) {
+                    if (response.rows[i] != undefined) {
+                        // console.log(i);
+                        if (response.rows[i].elements[i] != undefined) {
+                            if (response.rows[i].elements[i].status == "ZERO_RESULTS") {//没有数据
+                                var MatrixData1 = "";
+                            } else {
+                                var MatrixData1 = '相距' + response.rows[i].elements[i].distance.text + ',驾车' + response.rows[i].elements[i].duration.text;//单线
+                            }
+                            MatrixDataEven.push(MatrixData1);//单线
+                            TrafficTypeArray.push(1);//交通
+                        }
+                        if (response.rows[i + 1] != undefined) {
+                            if (response.rows[i + 1].elements[i].status == "ZERO_RESULTS") {//没有数据
+                                var MatrixData2 = '';
+                            } else {
+                                var MatrixData2 = '相距' + response.rows[i + 1].elements[i].distance.text + ',驾车' + response.rows[i + 1].elements[i].duration.text;//双线
+
+                            }
+                            MatrixDataOdd.push(MatrixData2);//双线
+                            TrafficTypeArray.push(1);//交通
+                        }
+
+                    }
+
+
+                    //整线等于单线+双线
+                    if (i % 2 === 1) {
+                        dataIDEVen.push($('.near-place').eq(i).attr('route_id'))//偶数组插入单线
+                    } else {
+                        dataIDOdd.push($('.near-place').eq(i).attr('route_id'))  //奇数组插入双线
+                        // if (i !== 0) {
+
+                        // }
+                    }
+                }
+
+
+                dataIAll = dataIDEVen.concat(dataIDOdd);//整数
+                MatrixDataAll = MatrixDataEven.concat(MatrixDataOdd);
+
+
+                // 过滤数组只更新需要更新
+                var upMatrixDataAll = [];
+                console.log(dataIAll);
+                console.log(upArray);
+                for (var i = 0; i < upArray.length; i++) {
+                    var index = upArray[i];
+                    upMatrixDataAll.push(MatrixDataAll[dataIAll.indexOf(index)]);
+                }
+                console.log(upMatrixDataAll);
+                upDataMATRIX();
+
+                function upDataMATRIX() {
+                    var addDATA = {
+                        'url': '/plan/ajaxspot/',
+                        'dato': {
+                            Intention: 'EditTraffic',
+                            PlanId: pId,
+                            DayId: Number($('#firstSetDay').attr('data-day')), //天id
+                            RouteId: upArray,  //传入数组
+                            TrafficType: TrafficTypeArray,
+                            TrafficInfo: upMatrixDataAll //传入数组
+                        }
+                    };
+
+                    apiRequest(addDATA, function (zt, res) {
+                        upArray = [];
+                        TrafficTypeArray = [];
+                        upMatrixDataAll = [];
+                        if (res.ResultCode == '200') {
+                            get_route_plan(addDATA.dato.DayId).then(function (data) {
+                                load_map();
+                            });
+
+                        } else {
+                            layer.msg(res.Message);
+                        }
+                    });
+                }
+
+            }
+
+        }
+    });
+
+
+    // 右侧景点详情
+    function showlistData($id) {
+        var ajaxData = {
+            'url': '/plan/ajaxspot/',
+            'dato': {
+                'Intention': "GetPlaceInfo", //方法
+                'Type': $('#jsTypeTX').attr('data-type'), //类型
+                'ID': $id //新增城市id
+            }
+        };
+        apiRequest(ajaxData, function (zt, res) {
+            if (res.ResultCode == '200') {
+                // console.log(res);
+                // 拼接html
+                var html = '';
+                html += '<div class="ins-pop-head">';
+                html += '<a href="javascript:void(0);" class="ins-pop-add fr addRoute">+添加到行程</a>';
+                // html += '<p class="ins-pop-tit">' + res.Data.CnName + '</p>';
+                html += '<span class="ins-pop-close fl"><i class="icon iconfont icon-guanbifuzhi"></i></span>';
+                html += '</div>';
+                html += '<div class="ins-pop-main">';
+                html += '<div class="pop-pic">';
+                html += '<div class="tempWrap" style="overflow:hidden; position:relative; width:472px">';
+                html += '<ul class="pic" style="width: 2832px; position: relative; overflow: hidden; padding: 0px; margin: 0px; left: -1888px;">';
+                for (var i = 0; i < res.Data.Images.length; i++) {
+                    if (i === 0) {
+                        html += '<li  class="clone" style="float: left; width: 472px;"><img src="' + res.Data.Images[i] + '"></li>';
+                    } else {
+                        html += '<li style="float: left; width: 472px;"><img src="' + res.Data.Images[i] + '"></li>';
+                    }
+                }
+                html += '</ul></div><a href="javascript:void(0);" class="bannerBtn next"></a>';
+                html += '<a href="javascript:void(0);" class="bannerBtn prev"></a>';
+                html += '</div>';
+                if (res.Data.Description) {
+                    html += '<div class="ins-pop-box ins">';
+                    html += '<p class="sutit">' + res.Data.CnName + '</p>';
+                    html += '<div class="sunr mt10 killYOU" id="toggleText">' + res.Data.Description + '</div>';
+                    html += '<p class="tar moreIns" id="showAllText"> <a href="javascript:void(0);"><span class="text">展开全部</span><i class="icon iconfont icon-xiajiantou"></i></a> </p>';
+                    html += '</div>';
+                }
+                html += '<div class="ins-pop-box mt15">';
+                html += '<ul>';
+                var text = {
+                    "CnName": "",
+                    "EnName": "",
+                    "Description": "简介",
+                    "OpeningHours": "时间",
+                    "PriceDesc": "门票",
+                    "Address": "地址",
+                    "Phone": "电话",
+                    "Site": "网址",
+                    "Lng": "",
+                    "Lat": "",
+                    "Images": [],
+                    "Traffic": "交通",
+                    "Time": "建议游玩"
+                };
+                for (var i in res.Data) {
+                    if (res.Data[i] !== '' && i !== 'CnName' && i !== 'EnName' && i !== 'Description' && i !== 'Images' && i !== 'Lat' && i !== 'Lng') {
+                        html += '<li class="cf">';
+                        html += '<span class="box-left">' + text[i] + '</span>';
+                        html += '<div class="box-right">' + res.Data[i] + '</div>';
+                        html += '</li>';
+                    }
+                }
+
+                html += '</ul>';
+                html += '</div>';
+                $('#showPoP').empty();
+                $('#showPoP').append(html);
+
+                //图片切换
+                jQuery(".pop-pic").slide({
+                    mainCell: ".pic",
+                    effect: "leftLoop",
+                    autoPlay: true,
+                    delayTime: 600
+                });
+
+            } else {
+                layer.msg(res.Message);
+            }
+        });
+    }
+
+    // 交通路线展示
+    function showTravelLine(LatLng1, LatLng2, type, index) {
+        if ($.isArray(LatLng1)) {
+            var LatLng1 = LatLng1;
+            var LatLng2 = LatLng2;
+        } else {
+            var LatLng1 = LatLng1.split(",");
+            var LatLng2 = LatLng2.split(",");
+        }
+
+        directionsMome(LatLng1, LatLng2, type, index).then(function (data) {
+            var $partent = $('.near-trffic-list').eq(index);
+            if (data.status == 'OK') {
+                // console.log(data.routes[0].legs[0]);
+                var sb = setInterval(function () {
+                    var $adpPlacemark = $partent.find('.adp-placemark');
+                    // console.log($adpPlacemark.length !== 0);
+                    if ($adpPlacemark.length !== 0) {
+                        $adpPlacemark.show();
+                        var $oransta = $('#oransta');
+                        var text1 = '<p class="trffic-end"> <span class="num fl">起</span> <span class="text">' + $oransta.attr('Title2') + '</span> </p>';
+                        var text2 = '<p class="trffic-start"> <span class="num fl">终</span> <span class="text">' + $oransta.attr('Title1') + '</span></p>';
+                        $adpPlacemark.eq(0).html(text1);
+                        $adpPlacemark.eq(1).html(text2);
+                        window.clearInterval(sb);
+                        if ($('.checkOn').parents('.place-traffic').find('i').attr('data-ico') == index) {
+                            var checkHtml = '<span  class="choseBtn123 fr on">已选</span>';
+                        } else {
+                            var checkHtml = '<span  class="choseBtn123 fr">选择</span>';
+                        }
+
+                        $partent.append(checkHtml);
+                    }
+                }, 500)
+            } else {
+                var checkHtml = '<div style="text-align: center;margin-top: 10%;">暂无信息</div>';
+                $partent.append(checkHtml);
+            }
+        })
+
+    }
+});
+
+
+/**
+ * 更新google地图数据
+ */
+var markers = [];
+var flightPath;
+var infowindows = [];
+var USGSOverlayX1 = '';
+
+function load_map() {
+    addMarker();
+
+    function addMarker() {
+        //清空重置
+        var marklabel = 0;
+        var locationsData = [];
+        if (infowindows && flightPath && USGSOverlayX1) {
+            // deleteType(infowindows);
+            flightPath.setMap(null);
+            console.log(USGSOverlayX1);
+            USGSOverlayX1.onRemove();
+        }
+
+        //坐标实例
+        $('#showDaytravl').find('.near-place').each(function (key) {
+            locationsData.push({lat: Number($(this).attr('data-x')), lng: Number($(this).attr('data-y'))});
+            var markMsg = $(this).find('.jsForNearTit').text();
+            marklabel++;
+            var markLocaion = new google.maps.LatLng($(this).attr('data-x'), $(this).attr('data-y'));
+            // marker = new google.maps.Marker({
+            //     // title: markMsg,
+            //     label: '' + marklabel,
+            //     position: markLocaion,
+            //     map: maplace
+            // });
+            // markers.push(marker);
+
+            function styleFN() {
+                var div = document.createElement('div');
+                div.style.border = '0';
+                div.style.position = 'absolute';
+
+                // Create the img element and attach it to the div.
+                var cDiv = document.createElement("div");
+                cDiv.style.border = '1px solid #ff9934';
+                cDiv.style.background = "#fff";
+                cDiv.style.height = "32px";
+                cDiv.style.lineHeight = "32px";
+                cDiv.style.padding = "0 8px 0 40px";
+                cDiv.style.whiteSpace = "nowrap";
+                cDiv.style.position = "absolute";
+                cDiv.style.left = "0px";
+                cDiv.style.top = "-36px";
+                var html = this.html_;
+                cDiv.innerHTML = html;
+                var labelNum = document.createElement("div");
+                labelNum.style.width = "32px";
+                labelNum.style.height = "34px";
+                labelNum.style.lineHeight = "34px";
+                labelNum.style.textAlign = "center";
+                labelNum.style.position = "absolute";
+                labelNum.style.zIndex = "10";
+                labelNum.style.left = "0px";
+                labelNum.style.top = "-36px";
+                labelNum.style.color = "#fff";
+                labelNum.style.background = "#ff9934";
+                labelNum.innerHTML = this.labelNum_;
+                div.appendChild(cDiv);
+                div.appendChild(labelNum);
+                return div;
+            }
+
+            var bounds = new google.maps.LatLngBounds(markLocaion);
+            USGSOverlayX1 = new USGSOverlay(bounds, markMsg, key + 1, maplace, styleFN);
+            // var contentString = '<div style="width: 100%; height: 100%; ">' + markMsg + '</div>';
+            // infowindow = new google.maps.InfoWindow({
+            //     content: contentString,
+            //     position: markLocaion
+            // });
+            // infowindows.push(infowindow);
+            // infowindow.open(maplace);
+        });
+
+        //多线段实例
+        flightPath = new google.maps.Polyline({
+            path: locationsData,
+            strokeColor: '#FF0000',
+            strokeOpacity: 1.0,
+            strokeWeight: 2,
+            map: maplace
+        });
+
+    }
+
+    /***
+     *从地图上清除
+     * @param type 组件类型数组infowindows 、markers 等
+     */
+    function deleteType(type) {
+        for (var i = 0; i < type.length; i++) {
+            type[i].setMap(null)
+        }
+        type = [];
+    }
+
+}
+
+
+
