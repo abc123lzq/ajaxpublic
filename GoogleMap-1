@@ -1,0 +1,2366 @@
+W_creatScript('/base/bluebird/3.5/bluebird.min.js');
+//定义变量行程主id
+var pId = GetQueryString('id');
+var IIXXoo = 0;
+// var LatLng1YJX = null;//用来预解析
+var LatLng1YJX = [$('.placeLi:last').attr('data-x'), $('.placeLi:last').attr('data-y')];
+var dayliSTArray = [];
+
+//载入时计算左、中、右模板宽度
+$(function () {
+    $(window).resize(function () {
+        getwidth();
+    });
+    $(window).load(function () {
+        getwidth();
+    });
+
+    function getwidth() {
+        var winw = $(".fullpage").outerWidth();
+        var gid5w = $(".gid-5").outerWidth();
+        var gid2w = $(".gid-2").outerWidth();
+        $(".gid-3").width(winw - gid5w - gid2w - 46);
+    }
+});
+
+$(document).ready(function () {
+    //左边的每天的安排列表、遍历
+    ToDataList();
+
+
+    //保存查看
+    $("#saveView").on('click', function () {
+        get_is_login().then(function (res) {
+            if (res.ResultCode == '0') {
+                get_async_login().then(function () {
+                    save_view();
+                })
+            } else {
+                save_view();
+            }
+        })
+    });
+
+    //拖拽组件（左侧）
+    var plandateList = document.getElementById("plandateList");
+    new Sortable(plandateList, {
+        onUpdate: function (evt) {
+            var DaySort = [];
+            $("#plandateList li").each(function () {
+                DaySort.push($(this).attr('data-id'));
+            });
+            //ajax提交排序
+            var ajaxData = {
+                'url': '/plan/ajaxspot/',
+                'dato': {
+                    'Intention': "DaySort", //方法
+                    'PlanId': pId, //此行程id
+                    'DaySort': DaySort, //新的排序，数组
+                }
+            };
+            apiRequest(ajaxData, function (zt, res) {
+                if (res.ResultCode == '200') {
+                    layer.msg(res.Message);
+                } else {
+                    layer.msg(res.Message);
+                }
+            });
+            //天数重新排序
+            get_left_day_sort();
+            //重新排序 日期
+            get_left_date_sort();
+        }
+    });
+
+    //拖拽组件(中间)
+    var sceneryList = document.getElementById("sceneryList");
+    var SortableSTARTDAta1 = null;
+    var SortableSTARTDAta2 = null;
+    var upArray = [];
+    new Sortable(sceneryList, {
+        onUpdate: function (evt) { //游览器dom位置变化完后 更多看说明  http://www.jb51.net/article/96446.htm
+            var RouteSort = [];
+            $("#sceneryList .placeLi").each(function () {
+                RouteSort.push($(this).attr('data-id'));
+            });
+            //ajax提交排序
+            var ajaxData = {
+                'url': '/plan/ajaxspot/',
+                'dato': {
+                    'Intention': "RoutePlanSort", //方法
+                    'PlanId': pId, //此行程id
+                    'DayId': $('#plandateList .on').attr('data-id'), //天id
+                    'RouteSort': RouteSort, //新的排序，数组
+                }
+            };
+            apiRequest(ajaxData, function (zt, res) {
+                if (res.ResultCode == '200') {
+                    // layer.msg(res.Message);
+                } else {
+                    layer.msg(res.Message);
+                }
+            });
+
+            //重新排序
+            get_plan_sort();
+        },
+        onStart: function (evt) {
+            var startNowDom = $(evt.item);
+            var startNxetDom = startNowDom.next();
+            var startPrevDom = startNowDom.prev();
+
+            SortableSTARTDAta1 = startNxetDom.find('.placeLi').attr('data-id');
+            SortableSTARTDAta2 = startPrevDom.find('.placeLi').attr('data-id');
+            upArray.push(startNowDom.find('.placeLi').attr('data-id'));
+            upArray.push(SortableSTARTDAta1);
+        },
+        onEnd: function (evt) {//拖拽完毕之后发生该事件
+            var startNowDom = $(evt.item);
+            var startNxetDom = startNowDom.next();
+            var startPrevDom = startNowDom.prev();
+
+            var startNxetDomID = startNxetDom.find('.placeLi').attr('data-id');
+            var startPrevDomID = startPrevDom.find('.placeLi').attr('data-id');
+            upArray.push(startNxetDomID);
+            if (SortableSTARTDAta1 === startNxetDomID || SortableSTARTDAta2 === startPrevDomID) {
+                return false; // 没变动
+            }
+
+            LatLng1YJX = [$('.placeLi:last').attr('data-x'), $('.placeLi:last').attr('data-y')];
+
+            var originsArray = [];
+            var destinationsArray = [];
+            var evenAnrray = $(".drowngDiv:even").toArray();
+            var oddnrray = $(".drowngDiv:odd").toArray();
+
+
+            function checkArray(typeArray, puArray) {
+                for (var i = 0; i < typeArray.length; i++) {
+                    var xx = $(typeArray).eq(i).find('.placeLi').attr('data-x');
+                    var yy = $(typeArray).eq(i).find('.placeLi').attr('data-y');
+                    puArray.push(new google.maps.LatLng(xx, yy))
+                }
+                return puArray;
+            }
+
+            var DrivingOptions = {
+                departureTime: new Date(Date.now() + 1),
+                trafficModel: 'bestguess'
+            };
+
+            var service = new google.maps.DistanceMatrixService();
+            service.getDistanceMatrix({
+                origins: checkArray(evenAnrray, originsArray),
+                destinations: checkArray(oddnrray, destinationsArray),
+                travelMode: 'DRIVING',
+                // drivingOptions: DrivingOptions,
+                avoidHighways: false,
+                avoidTolls: false
+            }, callback11);
+
+            function callback11(response, status) {
+                console.log(response);
+                //公里
+                var MatrixDataEven = [];
+                var MatrixDataOdd = [''];
+                var MatrixDataAll = [];
+
+                //id
+                var dataIDEVen = [];
+                var dataIDOdd = [];
+                var dataIAll = [];
+
+                //交通
+                var TrafficTypeArray = [1];
+                for (var i = 0; i < $('.placeLi').length; i++) {
+                    if (response.rows[i] != undefined) {
+                        console.log(i);
+                        if (response.rows[i].elements[i] != undefined) {
+                            if (response.rows[i].elements[i].status == "ZERO_RESULTS") {//没有数据
+                                var MatrixData1 = "";
+                            } else {
+                                var MatrixData1 = '相距' + response.rows[i].elements[i].distance.text + ',驾车' + response.rows[i].elements[i].duration.text;//单线
+                            }
+                            MatrixDataEven.push(MatrixData1);//单线
+                            TrafficTypeArray.push(1);//交通
+                        }
+                        if (response.rows[i + 1] != undefined) {
+                            if (response.rows[i + 1].elements[i].status == "ZERO_RESULTS") {//没有数据
+                                var MatrixData2 = '';
+                            } else {
+                                var MatrixData2 = '相距' + response.rows[i + 1].elements[i].distance.text + ',驾车' + response.rows[i + 1].elements[i].duration.text;//双线
+
+                            }
+                            MatrixDataOdd.push(MatrixData2);//双线
+                            TrafficTypeArray.push(1);//交通
+                        }
+
+                    }
+
+
+                    //整线等于单线+双线
+                    if (i % 2 === 1) {
+                        dataIDEVen.push($('.placeLi').eq(i).attr('data-id'))//偶数组插入单线
+                    } else {
+                        dataIDOdd.push($('.placeLi').eq(i).attr('data-id'))  //奇数组插入双线
+                        // if (i !== 0) {
+
+                        // }
+                    }
+                }
+
+
+                dataIAll = dataIDEVen.concat(dataIDOdd);//整数
+                MatrixDataAll = MatrixDataEven.concat(MatrixDataOdd);
+
+                // 过滤数组只更新需要更新
+                var upMatrixDataAll = [];
+                console.log(dataIAll);
+                console.log(upArray);
+                for (var i = 0; i < upArray.length; i++) {
+                    var index = upArray[i];
+                    upMatrixDataAll.push(MatrixDataAll[dataIAll.indexOf(index)]);
+                }
+                console.log(upMatrixDataAll);
+                upDataMATRIX();
+
+                function upDataMATRIX() {
+                    var addDATA = {
+                        'url': '/plan/ajaxspot/',
+                        'dato': {
+                            Intention: 'EditTraffic',
+                            PlanId: pId,
+                            DayId: $('#plandateList').find('li.on').attr('data-id'),
+                            RouteId: upArray,  //传入数组
+                            TrafficType: TrafficTypeArray,
+                            TrafficInfo: upMatrixDataAll //传入数组
+                        }
+                    };
+
+                    apiRequest(addDATA, function (zt, res) {
+                        upArray = [];
+                        TrafficTypeArray = [];
+                        upMatrixDataAll = [];
+                        if (res.ResultCode == '200') {
+                            get_route_plan().then(function (data) {
+                                if (data == 'ok') {
+                                }
+
+                            });
+
+                        } else {
+                            layer.msg(res.Message);
+                        }
+                    });
+                }
+
+            }
+
+        }
+    });
+
+
+    //行程标题编辑
+    $('.planNameEdite').on('click', function () {
+        var $thisDom = $(this);
+        //获取旧标题
+        var oldTitle = $thisDom.attr('data-title');
+        //获取旧行程概述
+        var oldInfo = $thisDom.attr('data-info');
+        //行程标题modal窗口
+        layer.open({
+            title: "编辑行程基本信息",
+            skin: 'layui-layer-rim', //加上边框
+            area: ['420px', '335px'], //宽高
+            btn: ['确定', '取消'],
+            btnAlign: 'l',
+            content: '<div style="width: auto;">' +
+            '<input id="xcTitle" type="text" placeholder="输入该行程的标题" value="' + oldTitle + '" style=" width: 100%; border: 1px solid #dedede; padding: 7px 0px; text-indent: 10px; border-radius: 3px;" />' +
+            '</div>' +
+            '<div style="margin-top: 10px">' +
+            '<textarea id="xcGaishu" class="poptextarea" placeholder="请输入该行程概述" style="  height: 135px; max-height: 135px;">' + html_decode(oldInfo) + '</textarea>' +
+            '</div>',
+            yes: function (index, thisDom) {
+                var newTitle = thisDom.find('#xcTitle').val();
+                var newInfo = thisDom.find('#xcGaishu').val();
+                //判断数据是否修改过
+                if (newTitle != oldTitle || newInfo != oldInfo) {
+                    var ajaxData = {
+                        'url': '/plan/ajaxspot/',
+                        'dato': {
+                            'Intention': "EditTitle", //方法
+                            'PlanId': pId, //此行程id
+                            'Title': newTitle, //行程标题
+                            'Remark': html_encode(newInfo), //行程描述
+                        }
+                    };
+                    apiRequest(ajaxData, function (zt, res) {
+                        if (res.ResultCode == '200') {
+                            //行程标题
+                            $(".planName").text(newTitle);
+                            $(".planNameEdite").attr('data-title', newTitle);
+                            //行程概述
+                            $(".planName").attr("gaishu", newInfo);
+                            $(".planNameEdite").attr('data-info', newInfo);
+                            layer.close(index);
+                            layer.msg(res.Message);
+                        } else {
+                            layer.msg(res.Message);
+                        }
+                    });
+                } else {
+                    layer.close(index);
+                }
+            }
+        });
+    });
+
+    //出行时间编辑
+    $(".planDateEdite").on('click', function () {
+        var $thisDom = $(this);
+        var oldDate = $("#dateshow").text();
+        WdatePicker({
+            doubleCalendar: false,
+            isShowClear: false,
+            el: 'sureDate',
+            dateFmt: 'yyyy-MM-dd',
+            minDate: '%y-%M-{%d+0}',
+            onpicked: function () {
+                var newDate = $("#sureDate").val();
+                //判断是否做过修改，有则提交
+                if (oldDate != newDate) {
+                    var ajaxData = {
+                        'url': '/plan/ajaxspot/',
+                        'dato': {
+                            'Intention': "EditDate", //方法
+                            'PlanId': pId, //此行程id
+                            'Date': unixDate(newDate) //时间为时间戳，精确到秒
+                        }
+                    };
+                    apiRequest(ajaxData, function (zt, res) {
+                        if (res.ResultCode == '200') {
+                            //获取开始行程的时间
+                            $thisDom.find("span").eq(1).css("display", "inline-block");
+                            $thisDom.find("span").eq(0).hide();
+                            $("#dateshow").text(newDate);
+                            //重新排序 日期
+                            get_left_date_sort();
+                            layer.msg(res.Message);
+                        } else {
+                            layer.msg(res.Message);
+                        }
+                    });
+                }
+            }
+        })
+    });
+
+    //点击删除某一天
+    $(document).on('click', '.deteBtn', function (e) {
+        //阻止上一个事件冒泡
+        e.stopPropagation();
+        //判断是从那个位置触发删除事件
+        if ($(this).parents('li').attr('data-id') != undefined) {
+            var $thisDom = $(this).parents('li');
+            var time = 0;
+        } else {
+            var $id = $(this).parents('.editDay').attr('data-id');
+            var $thisDom = $("#plandateList").find('li[data-id="' + $id + '"]');
+            var time = 200;
+        }
+        //删除方法
+        del_plan_day($thisDom, time);
+    });
+
+    //左侧天数编辑
+    $(document).on('click', '.editeBtn', function (e) {
+        //阻止上一个事件冒泡
+        e.stopPropagation();
+
+        var $thisDom = $(this).parents('li');
+        var thisId = $thisDom.attr("data-id");
+        //拼接编辑天数html
+        var tianHtml = '<div class="editDay" style="width: 210px; height: 170px;" data-id="' + thisId + '">' +
+            '<h2 style="font-weight: normal; color: #000;height: 40px; line-height: 40px; font-size: 14px; padding-left: 18px; border-bottom: 1px solid #dedede">操作</h2>' +
+            '<p class="addDay" data-type="1" style="padding:16px 20px 5px; color: #333; font-size: 13px; cursor: pointer"><i class="icon iconfont icon-jiahao" style=" font-size:14px;display: inline-block;margin-right:5px;vertical-align: top;"></i>之前插入一天</p>' +
+            '<p class="addDay" data-type="2" style="padding:10px 20px; color: #333; font-size: 13px; cursor: pointer"><i class="icon iconfont icon-jiahao" style=" font-size:14px;display: inline-block;margin-right:5px;vertical-align: top;"></i>之后插入一天</p>' +
+            '<p class="deteBtn" style="padding:5px 20px 0px; color: #333; font-size: 13px; cursor: pointer"><i class="icon iconfont icon-shanchu" style="display: inline-block;margin-right:5px;vertical-align: top;"></i>删除该日</p>' +
+            '</div>';
+        //弹出编辑html
+        layer.tips(tianHtml, $(this), {
+            tips: [3, '#fff'], //还可配置颜色
+            time: 2000002,
+            closeBtn: 1
+        });
+        //重置弹出tips
+        var tipleft = parseFloat($(".layui-layer-tips").css("left"));
+        $(".layui-layer-tips").css({left: tipleft - 120});
+        $(".layui-layer-tips .layui-layer-TipsG").hide();
+        $(".layui-layer-tips .layui-layer-content").css({padding: 0});
+        $(".layui-layer-tips .layui-layer-content").css('box-shadow', "0 0 10px rgba(0,0,0,.4)");
+    });
+
+    //左侧天数增加
+    $(document).on('click', '.addDay', function () {
+        var $type = $(this).attr('data-type');
+        if ($type == 1 || $type == 2) {
+            var $thisId = $(this).parents('.editDay').attr('data-id');
+        }
+
+        //添加城市
+        if ($type == 0) {
+            var $id = $("#plandateList li:last").find('.startArea:last').attr('data-id');
+            var $title = $("#plandateList li:last").find('.startArea:last').text();
+        }
+        // if ($type == 1) {
+        //     var $id = $("#plandateList li[data-id='" + $thisId + "']").prev().find('.startArea:last').attr('data-id');
+        //     var $title = $("#plandateList li[data-id='" + $thisId + "']").prev().find('.startArea:last').text();
+        // }
+        if ($type == 1 || $type == 2) {
+            var $id = $("#plandateList li[data-id='" + $thisId + "']").find('.startArea:last').attr('data-id');
+            var $title = $("#plandateList li[data-id='" + $thisId + "']").find('.startArea:last').text();
+        }
+        var ajaxData = {
+            'url': '/plan/ajaxspot/',
+            'dato': {
+                'Intention': "AddPlanDay", //方法
+                'PlanId': pId, //此行程id
+                'Type': $type, //添加天数方法 0代表往最后一个增加 1代表在某天前面添加 2代表在某天后面添加
+                'DayId': $thisId //行程天id
+            }
+        };
+        // console.log($type,$title);
+        apiRequest(ajaxData, function (zt, res) {
+            if (res.ResultCode = 200) {
+                var html = "";
+                html += '<li data-id="' + res.DayId + '">';
+                html += '<p class="dateL"></p>';
+                html += '<div class="dateM">';
+                html += '<p class="dateMgo" >';
+                if ($id != 'null' && String($id) != 'undefined') {
+                    html += '<span class="startArea" data-id="' + $id + '">' + $title + '</span>';
+                } else {
+                    html += '<span class="startArea" data-id="null">暂无安排</span>';
+                }
+                html += '</p>';
+                html += '<p class="f14 godate">暂无出发日期</p>';
+                html += '</div>';
+                html += '<p class="dateR">';
+                html += '<a href="javascript:;" class="btn deteBtn"><i class="icon iconfont icon-shanchu"></i></a>';
+                html += '<a href="javascript:;" class="btn editeBtn"><i class="icon iconfont icon-caidan"></i></a>';
+                html += '</p>';
+                html += '</li>';
+                if ($type == '0') {
+                    $("#plandateList").append(html);
+                }
+                if ($type == '1') {
+                    $("#plandateList li[data-id='" + $thisId + "']").before(html);
+                }
+                if ($type == '2') {
+                    $("#plandateList li[data-id='" + $thisId + "']").after(html);
+                }
+                //为当前添加天添加选中事情
+                $("#plandateList li").removeClass('on');
+                $("#plandateList li[data-id='" + res.DayId + "']").addClass('on');
+                //删除layer窗口
+                layer.closeAll();
+                //显示成功信息
+                layer.msg(res.Message);
+                //天数重新排序
+                get_left_day_sort();
+                //重新排序 日期
+                get_left_date_sort();
+                //根据类型添加城市
+                if ($id != 'null' && String($id) != 'undefined') {
+                    add_day_city($id, $title, 1);
+                }
+                //重新加载中间城市数据
+                get_plan_city();
+                //重新加载中间数据
+                get_route_plan();
+                //重新加载右侧搜索城市
+                right_search_city(1);
+                //重新加载右侧数据
+                get_right_spot('1');
+            } else {
+                layer.msg(res.Message);
+            }
+        });
+    });
+
+    //左侧天li点击
+    $(document).on('click', '#plandateList li', function () {
+        $("#plandateList li").removeClass('on');
+        $(this).addClass('on');
+        $("#spotkeyword").val('');
+        //加载中间城市方法
+        get_plan_city();
+        //加载中间数据
+        get_route_plan();
+        //右侧城市数据
+        right_search_city('1');
+        //重新加载右侧数据
+        get_right_spot('1');
+
+
+    });
+
+    //中间添加城市焦点移入时
+    $("#addDayCity").on('focus', function () {
+        var $thisDom = $(this);
+        $thisDom.attr("placeholder", "请输入...");
+    });
+
+    //中间添加城市输入时
+    var seachTime = 0;
+    $("#addDayCity").on('input', function () {
+        window.clearTimeout(seachTime);
+        var $thisDom = $(this);
+
+        //搜索节流
+        seachTime = setTimeout(function () {
+            if($('#addressList').find('.city').length>=3){
+                layer.msg('可添加的城市最多三个');
+                return false;
+            }
+
+            var $searchCity = $("#searchCity");
+            var $val = $thisDom.val();
+            console.log($val);
+            var ajaxData = {
+                'url': '/plan/ajax/',
+                'dato': {
+                    'Intention': "PlanRouteCitySearch", //方法
+                    'Val': $val //提交值
+                }
+            };
+            apiRequest(ajaxData, function (zt, res) {
+                if (res.ResultCode == '200') {
+                    $searchCity.find('ul').empty();
+                    var html = '';
+                    if (res.Data != '' && res.Data != null && res.Data != undefined) {
+                        $.each(res.Data, function (i, list) {
+                            if (i != 0) {
+                                html += '<li data-id="' + list.ID + '"><a href="javascript:void(0);">' + list.Name + '</a></li>';
+                            } else {
+                                html += '<li data-id="' + list.ID + '" class="on"><a href="javascript:void(0);">' + list.Name + '</a></li>';
+                            }
+                        });
+                    } else {
+                        html += '<div id="noCity" class="">无搜索结果</div>';
+                    }
+                    $searchCity.find('ul').append(html);
+                    $searchCity.show();
+                } else {
+                    layer.msg(res.Message);
+                }
+            });
+        }, 666);
+
+    });
+
+    //中间添加城市键盘事件
+    $(document).on('keydown', '#addDayCity', function (e) {
+        var keyVal = e.keyCode;
+        var $searchCity = $("#searchCity");
+        var $liDom = $searchCity.find('li');
+        //回车时
+        if (keyVal == 13) {
+            var $id = $searchCity.find('.on').attr('data-id');
+            var $title = $searchCity.find(".on").text();
+            if ($id != undefined) {
+                add_day_city($id, $title);
+                $("#addDayCity").attr("placeholder", "+增加城市");
+            }
+        }
+        //上移时
+        if (keyVal == 38) {
+            var $index = $searchCity.find('.on').index();
+            $liDom.removeClass('on');
+            $liDom.eq($index - 1).addClass('on');
+        }
+        //下移时
+        if (keyVal == 40) {
+            var $index = Number($searchCity.find('.on').index()) + 1;
+            var $mm = $searchCity.find('li').length;
+            if ($index == $mm) {
+                var i = '0';
+            } else {
+                var i = $index;
+            }
+            $liDom.removeClass('on');
+            $liDom.eq(i).addClass('on');
+        }
+    });
+
+    //中间添加城市焦点离开时
+    $("#addDayCity").on('blur', function () {
+        var $thisDom = $(this);
+        $thisDom.click(function (event) {
+            event = event || window.event;
+            event.stopPropagation();
+        });
+        $('#searchCity').find('li').on('click', function () {
+            var $thisDom = $(this);
+            var $id = $thisDom.attr('data-id');
+            var $title = $thisDom.text();
+            add_day_city($id, $title);
+        });
+        $(document).on('click', function (e) {
+            $("#searchCity").hide();
+            $thisDom.val('');
+            $thisDom.attr("placeholder", "+增加城市");
+        });
+    });
+
+    //中间城市删除
+    $('#addressList').on('click', '.close', function () {
+        var $thisDom = $(this).parents('span');
+        var $leftDom = $('#plandateList .on').find('.dateMgo');
+        var $thisId = $thisDom.attr('data-id');
+        var $index = $thisDom.index('.city');
+        var ajaxData = {
+            'url': '/plan/ajaxspot/',
+            'dato': {
+                'Intention': 'DelPlanCity', //方法
+                'PlanId': pId, //此行程id
+                'DayId': $('#plandateList .on').attr('data-id'), //天id
+                'CityId': $thisId, //城市id
+                'Index': $index //第几个
+            }
+        };
+
+        apiRequest(ajaxData, function (zt, res) {
+            if (res.ResultCode == '200') {
+                //执行删除操作
+                //删除位置不等于最后一个时执行
+                if ($index != $("#addressList .city").length - 1) {
+                    $thisDom.next().remove();
+                    $thisDom.remove();
+                    $leftDom.find(".startArea:eq(" + $index + ")").next('i').remove();
+                    $leftDom.find(".startArea:eq(" + $index + ")").remove();
+                } else { //删除位置等于最后一个时执行
+                    $thisDom.prev().remove();
+                    $thisDom.remove();
+                    //删除左侧城市数据
+                    $leftDom.find(".startArea:eq(" + $index + ")").prev('i').remove();
+                    $leftDom.find(".startArea:eq(" + $index + ")").remove();
+                }
+                //删除完城市后，当城市为空时执行
+                if ($("#addressList .city").length <= 0) {
+                    $("#addressList").html('<span class="city" data-id="null">暂无城市安排</span>');
+                    //左侧数据写入
+                    $leftDom.html('<span class="startArea" data-id="null">暂无安排</span>');
+                }
+                //右侧所有城市重新操作
+                right_search_city();
+                layer.msg(res.Message);
+            } else {
+                layer.msg(res.Message);
+            }
+        });
+    });
+
+    //中间行程删除
+    $('#sceneryList').on('click', '.delBtn', function () {
+        //获取操作当前dom与id
+        var $thisDom = $(this).parents('.placeLi');
+        var $thisParent = $(this).parents('.drowngDiv');
+        var $thisOoM1 = $thisParent.prev().find('.place-traffic');
+        var $thisOoM2 = $thisParent.next().find('.place-traffic');
+
+        var $thisId = $thisDom.attr('data-id');
+        var $thisId2 = $thisParent.next().find('.placeLi').attr('data-id');
+        var $thisDomsiteId = $(this).parents('.placeLi').attr('site-id');
+        //删除窗口html拼接与定位
+        var delDom = $("#sceneryList").find(".placeLi[data-id=" + $thisId + "] .delBtn");
+        var delHtml = '<div style="width: 250px; height: 150px;">';
+        delHtml += '<h2 style="font-weight: normal; color: #000;height: 40px; line-height: 40px; font-size: 14px; padding-left: 18px; border-bottom: 1px solid #dedede">操作</h2>';
+        delHtml += '<p style="padding: 20px; color: #333; font-size: 13px;">您确定删除这个安排吗？</p>';
+        delHtml += '<div class="layui-layer-btn" style="position: absolute; bottom: 0; left: 0; right: 0;"><a class="layui-layer-btn0">确定</a><a class="layui-layer-btn1">取消</a></div>';
+        delHtml += '</div>';
+        //弹出删除窗口
+        layer.tips(delHtml, delDom, {
+            tips: [3, '#fff'],
+            time: 2000002,
+            closeBtn: 1,
+            yes: function (index) {
+                var ajaxData = {
+                    'url': '/plan/ajaxspot/',
+                    'dato': {
+                        'Intention': "DelRoutePlan", //方法
+                        'PlanId': pId, //此行程id
+                        'DayId': $('#plandateList .on').attr('data-id'), //天id
+                        'RouteId': $thisId //行程id
+                    }
+                };
+                apiRequest(ajaxData, function (zt, res) {
+                    if (res.ResultCode == '200') {
+                        layer.close(index);
+                        $('#ScenList').find('li[site-id=' + $thisDomsiteId + ']').removeClass('on');
+                        IIXXoo--;
+                        //重新排序
+                        get_plan_sort();
+
+                        //更新相距公里更新成功
+                        if ($thisParent.prev().length === 0) {
+                            $thisDom.parent().remove();
+                            $thisOoM2.remove();
+
+                        } else if ($thisParent.next().length === 0) {
+                            $thisDom.parent().remove();
+
+                        } else {
+                            var MatrixData11 = null;
+                            var kilometreStr = null;
+                            var LatLng1 = [$thisParent.prev().find('.placeLi').attr('data-x'), $thisParent.prev().find('.placeLi').attr('data-y')];
+                            var LatLng2 = [$thisParent.next().find('.placeLi').attr('data-x'), $thisParent.next().find('.placeLi').attr('data-y')];
+                            Matrix(LatLng1, LatLng2, 'DRIVING').then(function (response, status) {
+                                $thisDom.parent().remove();
+
+                                MatrixData = response.rows[0].elements[0];
+                                kilometreStr += '<div class="place-traffic">';
+                                kilometreStr += '<span class="ico"><i class="icon iconfont icon-jiache"></i></span>';
+                                kilometreStr += '<span class="traffic-text">相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text + ' </span>';
+                                kilometreStr += '</div>';
+                                MatrixData11 = '相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text;
+
+                                var addDATA = {
+                                    'url': '/plan/ajaxspot/',
+                                    'dato': {
+                                        Intention: 'EditTraffic',
+                                        PlanId: pId,
+                                        DayId: $('#plandateList').find('li.on').attr('data-id'),
+                                        RouteId: $thisId2,
+                                        TrafficType: 1,
+                                        TrafficInfo: MatrixData11
+                                    }
+                                };
+                                apiRequest(addDATA, function (zt, res) {
+                                    if (res.ResultCode == '200') {
+                                        //加载新数据
+                                        get_route_plan();
+                                    } else {
+                                        layer.msg(res.Message);
+                                    }
+
+
+                                });
+                            });
+                        }
+                        layer.msg(res.Message);
+                        LatLng1YJX = [$('.placeLi:last').attr('data-x'), $('.placeLi:last').attr('data-y')];
+
+                    } else {
+                        layer.msg(res.Message);
+                    }
+
+                });
+            }
+        });
+        //删除窗口定位位置
+        var tipleft = parseFloat($(".layui-layer-tips").css("left"));
+        $(".layui-layer-tips").css({'left': tipleft});
+        $(".layui-layer-tips").css("width", "auto");
+        $(".layui-layer-tips .layui-layer-TipsG").hide();
+        $(".layui-layer-tips .layui-layer-content").css({padding: 0});
+        $(".layui-layer-tips .layui-layer-content").css('box-shadow', "0 0 10px rgba(0,0,0, .4)");
+    });
+
+    //中间行程必去点击事件
+    $(document).on('click', '.bqSelect', function () {
+        var $thisDom = $(this);
+        var $thisId = $thisDom.parents('.placeLi').attr('data-id');
+        if ($thisDom.parents('.placeLi').hasClass('on')) {
+            var type = '0';
+            $thisDom.attr("checked", false);
+            $thisDom.parents('.placeLi').removeClass('on')
+        } else {
+            var type = '1';
+            $thisDom.attr("checked", true);
+            $thisDom.parents('.placeLi').addClass('on')
+        }
+        console.log(type);
+        var ajaxData = {
+            'url': '/plan/ajaxspot/',
+            'dato': {
+                'Intention': "RouteBQSelect", //方法
+                'PlanId': pId, //此行程id
+                'DayId': $('#plandateList .on').attr('data-id'), //天id
+                'RouteId': $thisId, //计划id
+                'Type': type //0时代表删除必去 1时代表添加必去
+            }
+        };
+        apiRequest(ajaxData, function (zt, res) {
+            if (res.ResultCode == '200') {
+                layer.msg(res.Message);
+                return false;
+            } else {
+                layer.msg(res.Message);
+                return false;
+            }
+        });
+
+    });
+
+    //中间行程添加自定义
+    $('#addCustomPlan a').on('click', function () {
+        var $thisDom = $(this);
+        var $type = $thisDom.attr('data-type');
+        var typeName = get_site_type($type);
+        //拼接自定义行程窗口html
+        if ($type != '4') { //不是交通时的html
+            var html = '';
+            html += '<div style="width: auto;padding: 10px 20px;">' + typeName + '名称：<input id="addCustomPTitle" type="text" placeholder="请输入' + typeName + '名称" value="" style=" width: 100%; max-width: 380px; border: 1px solid #dedede; padding: 7px 0px; text-indent: 10px; border-radius: 3px;" />';
+            html += '</div>';
+            html += '<div style="padding: 10px 20px;">' + typeName + '地址：<textarea id="addCustomAddress" class="poptextarea" style="height:90px; max-height: 90px;" placeholder="请输入' + typeName + '地址"></textarea>';
+            html += '</div>'
+        }
+        layer.open({
+            type: 1,
+            title: "添加" + typeName,
+            skin: 'layui-layer-rim',
+            area: ['420px', '345px'],
+            btn: ['确定', '取消'],
+            btnAlign: 'l',
+            content: html,
+            yes: function (index) {
+                var layerDom = $(".layui-layer-rim");
+                var ajaxData = {
+                    'url': '/plan/ajaxspot/',
+                    'dato': {
+                        'Intention': "AddRoutePlan", //方法
+                        'PlanId': pId, //此行程id
+                        'DayId': $('#plandateList .on').attr('data-id'), //天id
+                        'Type': '5', //类型
+                        'Kind': $type, //自定义类型
+                        'Isdo': '0', //0时代表删除必去 1时代表添加必去
+                        'Title': layerDom.find('#addCustomPTitle').val(), //标题
+                        'Address': html_encode(layerDom.find('#addCustomAddress').val())
+                    }
+                };
+                if (ajaxData.dato.Title == '') {
+                    layer.msg(typeName + '名称不能为空');
+                    return
+                }
+                //执行添加操作
+                LatLng1YJX = null;
+                IIXXoo++;
+                add_route_plan(ajaxData, $thisDom);
+                layer.close(index);
+            }
+        });
+    });
+
+    //右侧点击选项卡
+    $('#Headmenu li').on('click', function () {
+        var $thisDom = $(this);
+        var $type = $thisDom.attr('data-type');
+        if (!$thisDom.is('.on')) {
+            $('#Headmenu li').removeClass('on');
+            $thisDom.addClass('on');
+        }
+        //查找关键字清空
+        $("#spotkeyword").val('');
+        //提示值修改
+        if ($type == '0') {
+            var placeholderTitle = '输入景点名称';
+        } else if ($type == '1') {
+            var placeholderTitle = '输入餐馆名称';
+        } else if ($type == '2') {
+            var placeholderTitle = '输入酒店名称';
+        } else if ($type == '3') {
+            var placeholderTitle = '输入购物地点/名称';
+        } else if ($type == '4') {
+            var placeholderTitle = '输入出发地/目的地';
+        } else if ($type == '6') {
+            var placeholderTitle = '输入搜索值';
+        }
+        $("#spotkeyword").attr('placeholder', placeholderTitle);
+        //获取数据
+        get_right_spot('1');
+    });
+
+    //右侧城市搜索回车事件
+    $("#spotSearch").submit(function () {
+        get_right_spot('1');
+        return false;
+    });
+
+    //右侧城市搜索，图标点击事件
+    $("#spotSearchBtn").on('click', function () {
+        get_right_spot('1');
+    });
+
+    //右侧添加行程
+    $('#ScenList,#showPoP').on('click', '.addRoute', function () {
+        layer.closeAll();
+        var $agad = $('#ScenList').find('li.forAgainAdd');
+        if ($agad.length !== 0) {
+            var $thisDom = $agad
+        } else {
+            var $thisDom = $(this).parents('li');
+        }
+        if ($agad.hasClass('on')) {
+            layer.msg('该行程已经添加');
+            return false;
+        }
+        //地理位置
+        var LatLngAddress = [$thisDom.attr('data-x'), $thisDom.attr('data-y')];
+        // reverseCoding(LatLngAddress).then(function (data) {
+
+        if ($thisDom.attr('data-address')) {
+            var AddressData = $thisDom.attr('data-address');
+        } else {
+            var AddressData = '暂无';
+        }
+
+        var ajaxData = {
+            'url': '/plan/ajaxspot/',
+            'dato': {
+                'Intention': "AddRoutePlan", //方法
+                'PlanId': pId, //此行程id
+                'DayId': $('#plandateList .on').attr('data-id'), //天id
+                'Type': $('#Headmenu .on').attr('data-type'), //类型
+                "Site_Id": $thisDom.attr('site-id'), //地点id
+                'CityId': $thisDom.attr('data-city'),
+                "Title": $thisDom.attr('data-title'),
+                "Isdo": "0", //是否必去
+                "lat": $thisDom.attr('data-x'), //坐标x
+                "lon": $thisDom.attr('data-y'),//坐标y
+                'Image': $thisDom.find('.list-head img').attr('src'),
+                'Address': AddressData
+            }
+        };
+        console.log($('.placeLi').length, IIXXoo);
+        // console.log($thisDom.attr('data-id'));
+        if ($('.placeLi').length !== IIXXoo) {
+            return false;
+        } else {
+            add_route_plan(ajaxData, $thisDom);
+            $thisDom.addClass('on');
+            IIXXoo++
+        }
+        // });
+
+
+        //添加城市
+        var $id = $("#detailCity").attr('data-id');
+        var $title = $("#detailCity").text();
+        var cityArr = [];
+        $("#addressList .city").each(function () {
+            cityArr.push($(this).attr('data-id'));
+        });
+        var isExist = $.inArray($id, cityArr);
+        //如果添加安排城市不存在，则添加城市到天计划里
+        if (isExist == -1) {
+            add_day_city($id, $title);
+        }
+    });
+
+    // 右侧城市选择操作--下拉显示隐藏操作
+    $("#detailCity").on('click', function (event) {
+        //取消事件冒泡
+        event.stopPropagation();
+        if ($('#hascity').is(':hidden')) {
+            $('#hascity').show();
+        } else {
+            $('#hascity').hide();
+        }
+    });
+
+    //点击空白处隐藏--城市选择操作区域
+    $(document).click(function (event) {
+        var _con = $('#hascity');
+        if (!_con.is(event.target) && _con.has(event.target).length === 0) {
+            $('#hascity').hide();
+        }
+    });
+
+    // 右侧城市选择操作--城市选择
+    $(document).on('click', '#hascity a', function () {
+        var $id = $(this).attr('data-id');
+        var $title = $(this).text();
+        $('#hascity').hide();
+        $("#detailCity").attr('data-id', $id);
+        $("#detailCity").html($title + '<i class="icon f14 iconfont icon-xiangxia "></i>');
+        get_right_spot('1');
+    });
+
+    // 右侧列表详情
+    $('#ScenList').on('click', 'li .jsChairData', function () {
+        $(this).parents('li').addClass('forAgainAdd').siblings().removeClass('forAgainAdd');
+        var $id = $(this).parents('li').attr('site-id');
+        var type = $('#Headmenu').find('li.on').attr('data-type');
+        showlistData($id, type).then(function () {
+            //文字加载更多限制高度
+            var threeHeight = $('.ins-pop-main .sunr').outerHeight();
+            console.log(threeHeight);
+            var $sunr = $('.ins-pop-main .sunr');
+            var $showAllText = $('#showAllText');
+            $showAllText.hide();
+            if (threeHeight > 94) {
+                $sunr.css({"height": "68", 'overflow': 'hidden'});
+                $showAllText.show();
+            }
+
+            // 没有没有的div隐藏
+            var $insPopBox = $('.ins-pop-box');
+            if ($insPopBox.find('ul').length === 0) {
+                $insPopBox.eq(1).hide();
+            } else if ($insPopBox.length === 0) {
+                $('.ins-pop-box').eq(0).hide();
+            }
+        });
+    });
+
+    // 点击中间标题查看请求
+    $(document).on('click', '.place-tit', function () {
+        layer.closeAll();
+        var $id = $(this).parents('.placeLi').attr('site-id');
+        var type = $(this).parents('.placeLi').attr('data-type');
+
+        console.log($id);
+        if ($id == '' || $id == undefined) {
+            layer.msg('无详情 ');
+            coseinsPop();
+            return false;
+        }
+
+        if ($id && type) {
+            showlistData($id, type).then(function () {
+                //文字加载更多限制高度
+                var threeHeight = $('.ins-pop-main .sunr').outerHeight();
+                console.log(threeHeight);
+                var $sunr = $('.ins-pop-main .sunr');
+                var $showAllText = $('#showAllText');
+                $showAllText.hide();
+                if (threeHeight > 94) {
+                    $sunr.css({"height": "68", 'overflow': 'hidden'});
+                    $showAllText.show();
+                }
+
+                // 没有没有的div隐藏
+                var $insPopBox = $('.ins-pop-box');
+                if ($insPopBox.find('ul').length === 0) {
+                    $insPopBox.eq(1).hide();
+                } else if ($insPopBox.length === 0) {
+                    $('.ins-pop-box').eq(0).hide();
+                }
+            });
+            $(".ins-pop").addClass("active");
+        }
+    });
+
+    // 查看周边、交通
+    $(document).on('click', '.jsCheckList , .traffic-text', function () {
+        layer.config({
+            skin: 'demo-class'
+        });
+        var dataId = $('#plandateList').find('li.on').attr('data-id');
+        var dayLen = $('#plandateList').find('li').length;
+        var lat = $(this).parents('.placeLi').attr('data-x');
+        var lng = $(this).parents('.placeLi').attr('data-y');
+
+        if ($(this).hasClass('traffic-text')) {
+            var checkType = 2;//交通
+            var siteId = $(this).parents().next('.placeLi').attr('site-id');
+        } else {
+            var checkType = 1;//周边
+            var siteId = $(this).parents('.placeLi').attr('site-id');
+        }
+
+        $('#plandateList li').each(function () {
+            dayliSTArray.push($(this).attr('data-id'))
+        });
+
+        var Url = WEB_PLAN_URL + '/plan/around?id=' + GetQueryString('id') + '&dataId=' + dataId + '&dayLen=' + dayLen +
+            '&lat=' + lat + '&lng=' + lng + '&dayliSTArray=' + dayliSTArray + '&checkType=' + checkType + '&siteId=' + siteId;
+        console.log(Url);
+        layer.open({
+            type: 2,
+            content: [Url, 'no'],
+            area: ['100%', '100%'],
+            title: false,
+            closeBtn: 0,
+            skin: 'demo-class'
+        });
+
+    });
+    $(document).on('click', '#closeLayer1', function () {
+        layer.closeAll();
+    })
+});
+
+
+// 切图自带
+$(function () {
+    $(window).resize(function () {
+        getwidth();
+    });
+    $(window).load(function () {
+        getwidth();
+    });
+    getwidth();
+
+    function getwidth() {
+        var winw = $(".fullpage").outerWidth();
+        var gid5w = $(".gid-5").outerWidth();
+        var gid2w = $(".gid-2").outerWidth();
+        $(".gid-3").width(winw - gid5w - gid2w - 46);
+    }
+
+    //搜索弹出来
+    $(".searScen .searchBtn a").on("click", function () {
+        if ($(this).parents(".searScen").hasClass("active")) {
+
+        } else {
+            $(this).parents(".searScen").addClass("active")
+        }
+    });
+    //关闭搜索框
+    $(".search-close").on("click", function () {
+        $(this).parents(".searScen").removeClass("active")
+    });
+
+    //点击查看详情 弹出详情
+    $("#ScenList").on("click", '.jsChairData', function () {
+        $(".ins-pop").addClass("active");
+
+    });
+
+    $(document).on('click', '#showAllText a', function () {
+            var $sunr = $('.ins-pop-main .sunr');
+            if ($(this).attr('data-flag') == 'true') {
+                $sunr.css("height", "auto");
+                $(this).find('.text').text('收起内容');
+                $(this).attr('data-flag', 'false')
+                $(this).find('i').css({display: 'inline-block', transform: 'rotate(180deg)'});
+            } else {
+                $sunr.css("height", "68");
+                $(this).find('.text').text('展开全部');
+                $(this).attr('data-flag', 'true')
+                $(this).find('i').css({display: 'inline-block', transform: 'rotate(360deg)'});
+            }
+        }
+    );
+
+    //关闭查看详情
+    $(document).on("click", ".ins-pop-close", function () {
+        coseinsPop();
+    });
+});
+
+//关闭查看详情函数
+function coseinsPop() {
+    $(".ins-pop").removeClass("active");
+    $('#ScenList').find('li.forAgainAdd').removeClass('forAgainAdd');
+    $('#showAllText a').attr('data-flag', 'true')
+}
+
+//阻止input键盘上下移动光标换位置
+function confirm(e) {
+    var key_num = e.keyCode;
+    if (38 == key_num) {
+        e.preventDefault();
+        // return false;
+    }
+}
+
+/**
+ * 接口
+ * Describe 获取最左边的每天的安排列表、
+ * Time 2017-03-27 by sutaiyi
+ * */
+function ToDataList() {
+    //获取行程计划Id
+    var ajaxData = {
+        'url': "/plan/ajaxspot/",
+        'dato': {
+            'Intention': 'EditPlan', //方法
+            'PlanId': pId //此行程id
+        }
+    };
+    apiRequest(ajaxData, function (zt, res) {
+        if (res.ResultCode == 200) {
+            //判断行程标题是否存在
+            if (res.Route_Title != '' && res.Route_Title != null && res.Route_Title != undefined) {
+                //行程标题
+                $(".planName").text(res.Route_Title);
+                $(".planNameEdite").attr('data-title', res.Route_Title);
+                //行程概述
+                if (res.Route_Remark != '' && res.Route_Remark != null && res.Route_Remark != undefined) {
+                    $(".planName").attr("gaishu", res.Route_Remark);
+                    $(".planNameEdite").attr('data-info', res.Route_Remark);
+                }
+            }
+            //左侧行程城市
+            DateList(res.Days);
+            //判断日期是否存在
+            if (res.Route_Date != '' && res.Route_Date != null && res.Route_Date != undefined) {
+                $("#dateshow").text(getTime(Number(res.Route_Date) + 1000));
+                $(".planDateEdite span").eq(0).hide();
+                $(".planDateEdite span").eq(1).css('display', 'inline-block');
+                //日期排序
+                get_left_date_sort();
+            }
+        } else {
+            layer.msg(res.Message);
+            setTimeout(function () {
+                location.href = '/plan/route/';
+            }, 1000);
+        }
+    });
+}
+
+/**
+ * Describe 成功后数据天数循环遍历
+ * ListData：数据
+ * way：循环方式（刚进入页面的渲染，有新增、插入的渲染）
+ * dataIndex：必要时传入 li 的个数+1 的值
+ * Time 2017-03-27 by sutaiyi
+ * */
+function DateList(ListData) {
+    //清空左侧
+    $("#plandateList").empty();
+    //拼接左侧html
+    var addHtml = "";
+    $.each(ListData, function (key, val) {
+        if (key == '0') {
+            addHtml += '<li data-id="' + val.DayId + '" class="on">';
+        } else {
+            addHtml += '<li data-id="' + val.DayId + '">';
+        }
+        addHtml += '<p class="dateL"></p>';
+        addHtml += '<div class="dateM">';
+        addHtml += '<p class="dateMgo">';
+        if (val.TourCity != "" && val.TourCity != null && val.TourCity != undefined) {
+            for (var j = 0; j < val.TourCity.length; j++) {
+                var cityVal = val.TourCity[j];
+                if (val.TourCity.length - 1 == j) {
+                    addHtml += '<span class="startArea" data-id="' + cityVal.CityId + '" data-x="' + cityVal.lat + '" data-y="' + cityVal.lon + '"> ' + cityVal.CityName + ' </span>';
+                } else {
+                    addHtml += '<span class="startArea" data-id="' + cityVal.CityId + '" data-x="' + cityVal.lat + '" data-y="' + cityVal.lon + '"> ' + cityVal.CityName + ' </span><i class="icon iconfont icon-you"></i>';
+                }
+            }
+        } else {
+            addHtml += '<span class="startArea" data-id="null">暂无安排</span>';
+        }
+        addHtml += '</p>';
+        addHtml += '<p class="f14 godate">暂无出发日期</p>';
+        addHtml += '</div>';
+        addHtml += '<p class="dateR">';
+        addHtml += '<a href="javascript:;" class="btn deteBtn"><i class="icon iconfont icon-shanchu"></i></a>';
+        addHtml += '<a href="javascript:;" class="btn editeBtn"><i class="icon iconfont icon-caidan"></i></a>';
+        addHtml += '</p>';
+        addHtml += '</li>';
+    });
+    $("#plandateList").append(addHtml);
+    //获取左侧天城市至中间
+    get_plan_city();
+    //获取中间数据操作
+    get_route_plan();
+    //获取右侧搜索城市
+    right_search_city('1');
+    //获取右侧数据
+    get_right_spot('1');
+    //天数排序
+    get_left_day_sort();
+    //自定义图层
+    mapsOverlayView()
+}
+
+/**
+ * 左侧天数排序
+ */
+function get_left_day_sort() {
+    for (var i = 0; i < $("#plandateList li").length; i++) {
+        var j = i + 1;
+        $("#plandateList .dateL").eq(i).text('Day' + j + ':');
+    }
+}
+
+/**
+ * 左侧日期排序
+ */
+function get_left_date_sort() {
+    var $date = $("#dateshow").text();
+    for (var i = 0; i < $("#plandateList li").length; i++) {
+        var j = i + 1;
+        $("#plandateList .godate").eq(i).text(showdate($date, j));
+    }
+}
+
+/**
+ * 获取当前日期及往后日期
+ * @param date 哪天开始格式为 yyyy-mm-dd
+ * @param n 代表往后几天
+ * @returns {uom} 得到的日期 格式为 yyyy-mm-dd
+ */
+function showdate(date, n) {
+    var uom = new Date(new Date(date) - 0 + n * 86400000);
+    //uom.getFullYear() + "年" +
+    uom = (uom.getMonth() + 1) + "月" + uom.getDate() + "日 周" + ('天一二三四五六'.charAt(uom.getDay()));
+    return uom;
+}
+
+/**
+ * 删除行程天
+ * @param $thisDom 操作对应的dom
+ * @param time
+ */
+function del_plan_day($thisDom, time) {
+    layer.closeAll();
+    var thisId = $thisDom.attr('data-id');
+    setTimeout(function () {
+        $("#plandateList").find("li[data-id=" + thisId + "] .deteBtn").css("display", "inline-block");
+        var delDom = $("#plandateList").find("li[data-id=" + thisId + "] .deteBtn");
+        //拼接删除html
+        var delHtml = '<div style="width: 250px; height: 150px;">';
+        delHtml += '<h2 style="font-weight: normal; color: #000;height: 40px; line-height: 40px; font-size: 14px; padding-left: 18px; border-bottom: 1px solid #dedede">删除</h2>';
+        delHtml += '<p style="padding: 20px; color: #333; font-size: 13px;">确定删除这一天吗？</p>';
+        delHtml += '<div class="layui-layer-btn" style="position: absolute; bottom: 0; left: 0; right: 0;"><a class="layui-layer-btn0">确定</a><a class="layui-layer-btn1">取消</a></div>';
+        delHtml += '</div>';
+
+        //弹出删除tips
+        layer.tips(delHtml, delDom, {
+            tips: [3, '#fff'],
+            time: 2000002,
+            closeBtn: 1,
+            yes: function (index) {
+                var ajaxData = {
+                    'url': '/plan/ajaxspot/',
+                    'dato': {
+                        'Intention': "DelPlanDay", //方法
+                        'PlanId': pId, //此行程id
+                        'DayId': thisId //行程天id
+                    }
+                };
+                var $thisDom = $("#plandateList").find("li[data-id=" + thisId + "]");
+                var $index = $thisDom.index();
+                var $maxIndex = $("#plandateList li").length - 1;
+                //当天数剩余一条时无法删除
+                if ($maxIndex > 0) {
+                    apiRequest(ajaxData, function (zt, res) {
+                        if (res.ResultCode == '200') {
+                            if ($thisDom.is('.on')) {
+                                $thisDom.remove();
+                                if ($index == 0) {
+                                    $("#plandateList li").eq(0).addClass('on');
+                                }
+                                if ($index == $maxIndex) {
+                                    $("#plandateList li").eq($maxIndex - 1).addClass('on');
+                                }
+                                if ($index != 0 || $index != $maxIndex) {
+                                    $("#plandateList li").eq($index).addClass('on');
+                                }
+                                //执行中间获取数据操作
+                                get_route_plan();
+                            } else {
+                                $thisDom.remove();
+                            }
+                            //天数重新排序
+                            get_left_day_sort();
+                            //重新排序 日期
+                            get_left_date_sort();
+                            layer.close(index);
+                            layer.msg(res.Message);
+                        } else {
+                            layer.msg(res.Message);
+                        }
+                    });
+                }
+            }
+        });
+
+        //重置弹出tips 偏移位置
+        $("#plandateList").find("li[data-id=" + thisId + "] .deteBtn").removeAttr("style");
+        var tipleft = parseFloat($(".layui-layer-tips").css("left"));
+        $(".layui-layer-tips").css({left: tipleft - 121});
+        $(".layui-layer-tips").css("width", "auto");
+        $(".layui-layer-tips .layui-layer-TipsG").hide();
+        $(".layui-layer-tips .layui-layer-content").css({padding: 0});
+        $(".layui-layer-tips .layui-layer-content").css('box-shadow', "0 0 10px rgba(0,0,0, .4)");
+    }, time);
+}
+
+/**
+ * 中间每天行程城市
+ */
+function get_plan_city() {
+    //先获取左侧城市数据
+    var dayCity = [];
+    $("#plandateList .on").find('.startArea').each(function () {
+        dayCity.push({'name': $(this).text(), 'id': $(this).attr('data-id')});
+    });
+
+    //拼接中间城市内容
+    var html = '';
+
+    $.each(dayCity, function (i, list) {
+        if (list.id != 'null') {
+            html += '<span class="city" data-id="' + list.id + '">' + list.name + '<em class="close"><i class="icon iconfont icon-close"></i></em></span>';
+            html += '<i class=" icon iconfont icon-you"></i>';
+        } else {
+            html += '<span class="city" data-id="null">暂无城市安排</span>';
+        }
+    });
+    $("#addressList").html(html);
+    $("#addressList").find("i:last").remove();
+}
+
+/**
+ * 获取中间数据及相关操作
+ */
+function get_route_plan() {
+
+    console.log('请求了请求了');
+
+    return new Promise(function (RES, err) {
+
+        var dayId = $("#plandateList .on").attr('data-id');
+        //获取行程计划Id
+        var ajaxData = {
+            'url': "/plan/ajaxspot/",
+            'dato': {
+                'Intention': 'EditRoutePlan', //方法
+                'PlanId': pId, //此行程id
+                'DayId': dayId //天id
+            }
+        };
+        apiRequest(ajaxData, function (zt, res) {
+            if (res.ResultCode == '200') {
+                //清空行程安排所有数据
+                $("#sceneryList").empty();
+                //当行程安排为空时exit
+                if (res.Route == '' && res.Route == null && res.Route == undefined) {
+                    return
+                }
+                //拼接行程安排html
+                var html = '';
+                //Type 0景点 1餐馆 2酒店 3购物 4交通 5自定义  Kind 0景点 1餐馆 2酒店 3购物 4交通
+                $.each(res.Route, function (i, list) {
+
+                    html += '<div class="drowngDiv">';
+                    if (list.TrafficInfo !== '' && list.TrafficInfo !== null) {//相距公里
+                        html += '<div class="place-traffic">';
+                        var iconArray = ['icon iconfont icon-yinhang', 'icon iconfont icon-jiache', 'icon iconfont icon-buhang', 'icon iconfont icon-xinxinicon'];
+                        html += '<span class="ico"><i class="' + iconArray[list.TrafficType] + '" data-ico="' + list.TrafficType + '"></i></span>';
+                        html += '<span class="traffic-text">' + list.TrafficInfo + ' </span>';
+                        html += '</div>'
+                    }
+
+                    if (list.Type != '4' && list.Kind != '4') {
+                        if (list.Type != '5') {
+                            if (list.Isdo == "1") {
+                                html += '<div class="placeLi on"    data-Isdo="' + list.Isdo + '"  data-id="' + list.Route_Id + '" data-type="' + list.Type + '" site-id="' + list.Site_Id + '" data-x="' + list.lat + '" data-y="' + list.lon + '" data-isdo="' + list.Isdo + '">';
+
+                            } else {
+                                html += '<div class="placeLi"    data-Isdo="' + list.Isdo + '"  data-id="' + list.Route_Id + '" data-type="' + list.Type + '" site-id="' + list.Site_Id + '" data-x="' + list.lat + '" data-y="' + list.lon + '" data-isdo="' + list.Isdo + '">';
+
+                            }
+                        } else {
+                            if (list.Isdo == "1") {
+                                html += '<div  class="placeLi on"  data-id="' + list.Route_Id + '" data-type="' + list.Type + '" data-info="' + list.Address + '" data-x="0" data-y="0">';
+
+                            } else {
+                                html += '<div  class="placeLi"  data-id="' + list.Route_Id + '" data-type="' + list.Type + '" data-info="' + list.Address + '" data-x="0" data-y="0">';
+                            }
+                        }
+                        html += '<div class="limove">';
+                        html += '<div class="sceneryR">';
+                        html += '<p class="sceneryfun">';
+                        if (list.Isdo == "1") {
+                            html += '<label class="choselabel cbt checked"  name="check" type="checkbox" val="2">';
+                        }
+                        if (list.Isdo == "0") {
+                            html += '<label class="choselabel cbt " name="check" type="checkbox" val="2">';
+                        }
+
+                        html += '<span class="ico bqSelect"><i class="choseInput icon iconfont icon-ok "></i></span>必去</label>';
+                        html += '<a href="javascript:;" class="delBtn" style="margin: 0 15px 0 15px;"><i class="icon iconfont icon-shanchu"></i>删除</a>';
+                        html += '</p>';
+                        html += '</div>';
+                        html += '<p class="place-left getPop">';
+
+                        if (list.Type != '5') {
+                            html += '<img src="' + list.Image + '" width="89" height="66" />';
+                            html += '<span class="tip">' + get_site_type(list.Type) + '</span>';
+                        } else {
+                            html += '<img src="http://images.57us.com/l/up/plan/' + list.Kind + '.jpg" width="89" height="66" />';
+                            html += '<span class="tip">' + get_site_type(list.Kind) + '</span>';
+                        }
+                        html += '</p>';
+                        html += '<div class="place-tit">';
+                        html += '<span class="sceneryNum11">' + list.Route_Id + '.</span>';
+                        html += '<span class="name getPop">' + list.Title + ' </span>';
+                        if (list.Isdo == "1") {
+                            html += '<span class="borad needGotip">必去</span>';
+                        }
+                        if (list.Isdo == "0") {
+                            $('.placeLi').removeClass('on');
+                            html += '<span class="borad needGotip">必去</span>';
+                        }
+                        // html += '<span class="borad needGotip">必去</span>';
+                        html += '</div>';
+                        html += '<div class="place-cont">';
+                        if (list.Type != '5') {
+                            html += '地址：' + list.Address + '<span class="checkLocat jsCheckList">| 查看周边</span>';
+                        } else {
+                            html += '地址：' + list.Address;
+                        }
+                        html += '</div>';
+                        html += '</div>';
+                        html += '</div>';
+                        html += '</div>';
+                    }
+                });
+
+
+                $("#sceneryList").append(html);
+                $('.choselabel').inputbox();
+                IIXXoo = $('.placeLi').length;
+                LatLng1YJX = [$('.placeLi:last').attr('data-x'), $('.placeLi:last').attr('data-y')];
+                RES('ok');
+                //行程排序
+                get_plan_sort();
+            } else if (res.ResultCode == '100') {
+                $("#sceneryList").empty();
+                IIXXoo = $('.placeLi').length;
+                LatLng1YJX = [$('.placeLi:last').attr('data-x'), $('.placeLi:last').attr('data-y')];
+            } else {
+                layer.msg(res.Message);
+            }
+        });
+    })
+}
+
+/**
+ * 获取中间地点类型
+ * @param n代表类型
+ */
+function get_site_type(n) {
+    var siteTypeName;
+    switch (n) {
+        case '0':
+            siteTypeName = '景点';
+            break;
+        case '1':
+            siteTypeName = '餐馆';
+            break;
+        case '2':
+            siteTypeName = '酒店';
+            break;
+        case '3':
+            siteTypeName = '购物';
+            break;
+        case '4':
+            siteTypeName = '交通';
+            break;
+        case '6':
+            siteTypeName = '玩乐';
+            break;
+    }
+    return siteTypeName;
+}
+
+/**
+ * 中间行程排序
+ */
+function get_plan_sort() {
+    for (var i = 0; i < $("#sceneryList .placeLi").length; i++) {
+        var j = i + 1;
+        $("#sceneryList .placeLi .sceneryNum11").eq(i).text(j + '.');
+    }
+}
+
+/**
+ * 获取右侧景点数据
+ */
+function get_right_spot(page) {
+    var ajaxData = {
+        'url': '/plan/ajaxspot/',
+        'dato': {
+            'Intention': 'GetSpot', //方法
+            'CityId': $("#detailCity").attr('data-id'), //城市id
+            'Type': $("#Headmenu .on").attr('data-type'), //获取数据类型
+            'Page': page, //页码
+            'SpotKeyWord': $("#spotkeyword").val(), //查找关键字
+            'PlanId': GetQueryString('id'),
+            'DayId': $('#plandateList').find('li.on').attr('data-id')
+        }
+    };
+    //清空数据
+    $("#ScenList").empty();
+    $(".tcdPageCode").empty();
+    //如当前选择城市，退出
+    if (ajaxData.dato.CityId == 'null') {
+        return
+    }
+    apiRequest(ajaxData, function (zt, res) {
+        if (res.ResultCode = 200 && res.PageCount != '0') {
+            var html = "";
+            $.each(res.Result, function (i, list) {
+                if (list.Checked === 1) {
+                    html += '<li  class="on"  data-address="' + list.Address + '" site-id="' + list.Site_Id + '" data-title="' + list.Title + '" data-type="' + ajaxData.dato.Type + '" data-x="' + list.lat + '" data-y="' + list.lon + '" data-city="' + list.CityId + '">';
+                } else {
+                    html += '<li  data-address="' + list.Address + '" site-id="' + list.Site_Id + '" data-title="' + list.Title + '" data-type="' + ajaxData.dato.Type + '" data-x="' + list.lat + '" data-y="' + list.lon + '" data-city="' + list.CityId + '">';
+                }
+                html += '<div class="list-head">';
+                html += '<div class="list-pop">';
+                html += '<div class="listbox">';
+                html += '<p class="subtit">' + list.Title + '</p>';
+                if (ajaxData.dato.Type == '0') {
+                    html += '<p class=" tourtime">平均游玩时间：' + list.PlayTime + '</p>';
+                } else {
+                    html += '<p class=" tourtime"></p>';
+                }
+                html += '<a href="javascript:void(0);" class="listDetail mt10 jsChairData">查看详情></a>';
+                html += '</div>';
+                html += '</div>';
+                html += '<img src="' + list.Image + '" width="228" height="171" />';
+                html += '<p class="bot-tit">' + list.Title + '</p>';
+                html += '</div>';
+                html += '<p class="tac mt15">';
+                html += '<a href="javascript:void(0);" class="borad addxc addRoute"><i class="icon iconfont icon-jiahao"></i>添加到行程</a>';
+                html += '<span class="borad hasAdd"><i class="icon iconfont icon-2dagou"></i>已添加</span>';
+                html += '</p>';
+                html += '</li>';
+            });
+
+
+            $("#ScenList").append(html);
+            //页码
+            $(".tcdPageCode").createPage({
+                pageCount: Number(res.PageCount),
+                current: Number(res.Page),
+                type: 2,
+                backFn: function (p) {
+                    get_right_spot(p);
+                }
+            });
+        } else if (res.ResultCode == '100') {
+            var htmlx = '<p style="text-align: center; width: 100%;">没有搜索结果</span>';
+            $("#ScenList").append(htmlx);
+        } else {
+            var htmly = '<p style="text-align: center; width: 100%;">没有搜索结果</span>';
+            $("#ScenList").append(htmly);
+            layer.msg(res.Message);
+        }
+    })
+}
+
+/**
+ * 添加行程
+ * @param ajaxData ajax提交参数
+ */
+
+function add_route_plan(ajaxData, thisDom) {
+    console.log('创建了创建了');
+
+
+    var MatrixData = '';
+    var MatrixData11 = '';
+    var kilometreStr = '';
+    console.log(thisDom.attr('data-x'));
+    console.log(thisDom.attr('data-x') != '');
+    if (thisDom.attr('data-x') != 0 && thisDom.attr('data-x') != undefined && thisDom.attr('data-x') != '') {//有坐标数据才请求
+        // // 地理位置
+        // if (thisDom !== undefined) {
+        //     var LatLngAddress = [thisDom.attr('data-x'), thisDom.attr('data-y')];
+        //     reverseCoding(LatLngAddress).then(function (data) {
+        //         AddressData = thisDom.attr('data-address');
+        //     });
+        // }
+        //相距公里html
+        var LatLngAddress = [thisDom.attr('data-x'), thisDom.attr('data-y')];
+        if ($('.placeLi').length > 0 && LatLng1YJX != null && LatLng1YJX[0] != '0' && LatLng1YJX[0] != '' && LatLng1YJX[0] != undefined && LatLng1YJX[0] !== LatLngAddress[0]) {
+            // var LatLng1 = [$('.placeLi:last').attr('data-x'), $('.placeLi:last').attr('data-y')];
+            var LatLng2 = [thisDom.attr('data-x'), thisDom.attr('data-y')];
+            Matrix(LatLng1YJX, LatLng2, 'DRIVING').then(function (response, status) {
+                MatrixData = response.rows[0].elements[0];
+                kilometreStr += '<div class="place-traffic">';
+                kilometreStr += '<span class="ico"><i class="icon iconfont icon-jiache"></i></span>';
+                kilometreStr += '<span class="traffic-text">相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text + ' </span>';
+                kilometreStr += '</div>';
+                MatrixData11 = '相距' + MatrixData.distance.text + ',驾车' + MatrixData.duration.text;
+            });
+
+
+        }
+    }
+
+    LatLng1YJX = [thisDom.attr('data-x'), thisDom.attr('data-y')];//利用预解析后复制存储上一个值
+    apiRequest(ajaxData, function (zt, res) {
+            if (res.ResultCode == '200') {
+
+                var val = ajaxData.dato;
+                //拼接行程安排html
+                //Type 0景点 1餐馆 2酒店 3购物 4交通 5自定义  Kind 0景点 1餐馆 2酒店 3购物 4交通
+                var html = '';
+                html += '<div class="drowngDiv">';
+                if (kilometreStr !== '') {
+                    html += kilometreStr;
+                }
+                if (val.Type != '5') {
+                    html += '<div class="placeLi" data-id="' + res.Route_Id + '" data-type="' + val.Type + '" site-id="' + val.Site_Id + '" data-x="' + val.lat + '" data-y="' + val.lon + '"  data-Isdo="' + val.Isdo + '">';
+                } else {
+                    html += '<div class="placeLi" data-id="' + res.Route_Id + '" data-type="' + val.Type + '" data-info="' + val.Address + '" data-x="0" data-y="0"  data-Isdo="' + val.Isdo + '">';
+                }
+                html += '<div class="limove">';
+                html += '<div class="sceneryR">';
+                html += '<p class="sceneryfun">';
+                html += '<label class="choselabel cbt " name="check" type="checkbox" val="2" ><span class="ico bqSelect"><i class="choseInput icon iconfont icon-ok"></i></span>必去</label>';
+                html += '<a href="javascript:;" class="delBtn" style="margin: 0 15px 0 15px;"><i class="icon iconfont icon-shanchu"></i>删除</a>';
+                html += '</p>';
+                html += '</div>';
+                html += '<p class="place-left getPop">';
+                if (val.Type != '5') {
+                    html += '<span class="tip">' + get_site_type(val.Type) + '</span>';
+                } else {
+                    html += '<span class="tip">' + get_site_type(val.Kind) + '</span>';
+                }
+                if (val.Type != '5') {
+                    html += '<img src="' + thisDom.find('.list-head img').attr('src') + '" width="89" height="66" />';
+                } else {
+                    html += '<img src="http://images.57us.com/l/up/plan/' + thisDom.attr('data-type') + '.jpg" width="89" height="66" />';
+                }
+                html += '</p>';
+                html += '<div class="place-tit">';
+                html += '<span class="sceneryNum11">' + res.Route_Id + '.</span>';
+                html += '<span class="name getPop">' + val.Title + '</span>';
+                html += '<span class="borad needGotip">必去</span>';
+                html += '</div>';
+                html += '<div class="place-cont">';
+                if (val.Type != '5') {
+                    html += '地址：' + ajaxData.dato.Address + '<span class="checkLocat jsCheckList">| 查看周边</span>';
+                } else {
+                    html += '地址：' + ajaxData.dato.Address;
+                }
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+
+                $("#sceneryList").append(html);
+                //选中必去
+                $('.choselabel').inputbox();
+                if ($('.placeLi').length < 2) {
+                    MatrixData11 = '';
+                }
+
+                //距离和地址扔到接口
+                var addDATA = {
+                    'url': '/plan/ajaxspot/',
+                    'dato': {
+                        Intention: 'EditTraffic',
+                        PlanId: pId,
+                        DayId: $('#plandateList').find('li.on').attr('data-id'),
+                        RouteId: res.Route_Id,
+                        TrafficType: 1,
+                        TrafficInfo: MatrixData11,
+                        // Address: '地址：' + AddressData
+                    }
+                };
+
+                apiRequest(addDATA, function (zt, res) {
+                    if (res.ResultCode == '200') {
+
+                    } else {
+                        layer.msg(res.Message);
+                    }
+
+                });
+
+
+                //行程排序
+                get_plan_sort();
+                layer.msg(res.Message);
+            } else {
+                layer.msg(res.Message);
+            }
+
+        }
+    );
+
+
+}
+
+// 右侧景点详情
+function showlistData($id, type) {
+    return new Promise(function (RES, err) {
+        var ajaxData = {
+            'url': '/plan/ajaxspot/',
+            'dato': {
+                'Intention': "GetPlaceInfo", //方法
+                'Type': type,
+                'ID': $id //新增城市id
+            }
+        };
+        apiRequest(ajaxData, function (zt, res) {
+            if (res.ResultCode == '200') {
+                console.log(res);
+                // 拼接html
+                var html = '';
+                html += '<div class="ins-pop-head">';
+                html += '<a href="javascript:void(0);" class="ins-pop-add fr addRoute">+添加到行程</a>';
+                // html += '<p class="ins-pop-tit">' + res.Data.CnName + '</p>';
+                html += '<span class="ins-pop-close fl"><i class="icon iconfont icon-guanbifuzhi"></i></span>';
+                html += '</div>';
+                html += '<div class="ins-pop-main">';
+                html += '<div class="pop-pic">';
+                // html += '<a href="javascript:void(0);" class="checkLocatMap borad checkLocat">查看位置</a>';
+                html += '<div class="tempWrap" style="overflow:hidden; position:relative; width:472px">';
+                html += '<ul class="pic" style="width: 2832px; position: relative; overflow: hidden; padding: 0px; margin: 0px; left: -1888px;">';
+                for (var i = 0; i < res.Data.Images.length; i++) {
+                    if (i === 0) {
+                        html += '<li  class="clone" style="float: left; width: 472px;"><img src="' + res.Data.Images[i] + '"></li>';
+                    } else {
+                        html += '<li style="float: left; width: 472px;"><img src="' + res.Data.Images[i] + '"></li>';
+                    }
+                }
+                html += '</ul></div><a href="javascript:void(0);" class="bannerBtn next"></a>';
+                html += '<a href="javascript:void(0);" class="bannerBtn prev"></a>';
+                html += '</div>';
+                if (res.Data.Description) {
+                    html += '<div class="ins-pop-box ins" style="border: none;">';
+                    html += '<p class="sutit">' + res.Data.CnName + '</p>';
+                    html += '<div class="sunr mt10">' + res.Data.Description + '</div>';
+                    html += '</div>';
+                    html += '<p class="tar moreIns" id="showAllText"   style=" background-color: #fff; height: 30px;"> <a href="javascript:void(0);"  data-flag="true" style="margin: 0 25px 0 0;"><span class="text">展开全部</span><i class="icon iconfont icon-xiajiantou"></i></a> </p>';
+                }
+                html += '<div class="ins-pop-box mt15">';
+                html += '<ul>';
+                var text = {
+                    "CnName": "",
+                    "EnName": "",
+                    "Description": "简介",
+                    "OpeningHours": "时间",
+                    "PriceDesc": "门票",
+                    "Address": "地址",
+                    "Phone": "电话",
+                    "Site": "网址",
+                    "Lng": "",
+                    "Lat": "",
+                    "Images": [],
+                    "Traffic": "交通",
+                    "Time": "建议游玩"
+                };
+                for (var i in res.Data) {
+                    if (res.Data[i] !== '' && i !== 'CnName' && i !== 'EnName' && i !== 'Description' && i !== 'Images' && i !== 'Lat' && i !== 'Lng') {
+                        html += '<li class="cf">';
+                        html += '<span class="box-left">' + text[i] + '</span>';
+                        if (text[i] === "地址") {
+                            html += '<div class="box-right">' + res.Data[i];
+                            if (res.Data.Lat != '0' && res.Data.Lng != '0' && res.Data.Lat != '' && res.Data.Lng != '') {
+                                html += ' <a href="javascript:void(0);" class="checkLocatMap">查看位置</a></div>';
+                            }
+                        } else {
+                            html += '<div class="box-right">' + res.Data[i] + '</div>';
+                        }
+                        html += '</li>';
+                    }
+                }
+
+                html += '</ul>';
+                html += '</div>';
+                $('#showPoP').empty();
+                $('#showPoP').append(html);
+
+                RES('ok');
+
+                //图片切换
+                jQuery(".pop-pic").slide({
+                    mainCell: ".pic",
+                    effect: "leftLoop",
+                    autoPlay: true,
+                    delayTime: 600
+                });
+
+                //查看位置
+                $(document).on("click", ".checkLocatMap", function () {
+                    $(".pop-map").addClass("active");
+                    $('#rightMapAddres').text(res.Data.CnName);
+                    var myLatlng = new google.maps.LatLng(res.Data.Lat, res.Data.Lng);
+                    var mapOptions = {
+                        zoom: 12,
+                        center: myLatlng
+                    };
+                    var map = new google.maps.Map(document.getElementById('popMapBox'),
+                        mapOptions);
+
+
+                    // 改为自定义marker图层
+                    function styleFN() {
+                        var div = document.createElement('div');
+                        div.style.border = '0';
+                        div.style.position = 'absolute';
+
+                        // Create the img element and attach it to the div.
+                        var cDiv = document.createElement("div");
+                        cDiv.style.backgroundImage = 'url(http://images.57us.com/img/plan/v1.1/map.png)';
+                        cDiv.style.height = "46px";
+                        cDiv.style.width = "24px";
+                        cDiv.style.lineHeight = "26px";
+                        cDiv.style.position = "absolute";
+                        cDiv.style.left = "-10px";
+                        cDiv.style.top = "-46px";
+                        cDiv.style.color = "#fb5348";
+                        cDiv.style.textAlign = "center";
+                        cDiv.style.fontweight = "bold";
+                        cDiv.style.zIndex = "999";
+                        var html = this.html_;
+                        // cDiv.innerHTML = html;
+                        var labelNum = document.createElement("div");
+                        labelNum.style.width = "87px";
+                        labelNum.style.height = "19px";
+                        labelNum.style.lineHeight = "21px";
+                        labelNum.style.textAlign = "center";
+                        labelNum.style.position = "absolute";
+                        labelNum.style.zIndex = "10";
+                        labelNum.style.left = "9px";
+                        labelNum.style.top = "-44px";
+                        labelNum.style.fontWeight = "bold";
+                        labelNum.style.color = "rgb(251, 83, 72)";
+                        labelNum.style.background = "white";
+                        labelNum.style.border = "1px solid";
+                        labelNum.style.borderTopRightRadius = "20PX";
+                        labelNum.style.borderBottomRightRadius = "20PX";
+                        labelNum.style.overflow = "hidden";
+                        labelNum.style.textOverflow = "ellipsis";
+                        labelNum.style.whiteSpace = "nowrap";
+                        labelNum.innerHTML = html;
+                        div.appendChild(cDiv);
+                        div.appendChild(labelNum);
+                        return div;
+                    }
+
+
+                    var bounds = new google.maps.LatLngBounds(myLatlng);
+                    USGSOverlayX2 = new USGSOverlay(bounds, res.Data.CnName, 1, map, styleFN);
+
+                    //
+                    // var marker = new google.maps.Marker({
+                    //     position: myLatlng,
+                    //     map: map
+                    // });
+                    //
+                    // var contentString = '<div id="content">' + res.Data.CnName + '</div>';
+                    //
+                    // var infowindow = new google.maps.InfoWindow({
+                    //     content: contentString
+                    // });
+                    //
+                    // infowindow.open(map, marker);
+                    // marker.addListener('click', function () {
+                    //     infowindow.open(map, marker);
+                    // })
+                });
+                //关闭位置
+                $(document).on("click", ".pop-map-close", function () {
+                    $(".pop-map").removeClass("active");
+                    $('#popMapBox').empty();
+                });
+
+
+            } else {
+                layer.msg(res.Message);
+            }
+        });
+    });
+
+}
+
+
+/**
+ * 添加城市操作
+ * @param $id 新增城市
+ * @param $title 新增城市标题
+ */
+function add_day_city($id, $title, type) {
+    var $searchCity = $("#searchCity");
+    var $dayCityDom = $("#addressList");
+    var ajaxData = {
+        'url': '/plan/ajaxspot/',
+        'dato': {
+            'Intention': "AddDayCity", //方法
+            'PlanId': pId, //此行程id
+            'DayId': $('#plandateList .on').attr('data-id'), //天id
+            'CityId': $id //新增城市id
+        }
+    };
+    apiRequest(ajaxData, function (zt, res) {
+        if (res.ResultCode == '200') {
+            //判断搜索结果不为空时执行
+            if ($id != undefined) {
+                var html = '';
+                var leftHtml = '';
+                //根据目前拥有城市进行不同html拼接及写入
+                if ($dayCityDom.find('.city').attr('data-id') != 'null') {
+                    //中间html
+                    html += '<i class=" icon iconfont icon-you"></i>';
+                    html += '<span class="city" data-id="' + $id + '">' + $title + '<em class="close"><i class="icon iconfont icon-close"></i></em></span>';
+                    //左侧html
+                    leftHtml += '&nbsp;<i class="icon iconfont icon-you"></i>&nbsp;';
+                    leftHtml += '<span class="startArea" data-id="' + $id + '">' + $title + '</span>';
+                } else {
+                    //中间html
+                    $dayCityDom.empty();
+                    html += '<span class="city" data-id="' + $id + '">' + $title + '<em class="close"><i class="icon iconfont icon-close"></i></em></span>';
+                    //左侧html
+                    $("#plandateList .on").find('.dateMgo').empty();
+                    leftHtml += '<span class="startArea" data-id="' + $id + '">' + $title + '</span>';
+                }
+                if (type != 1) {
+                    //中间html写入
+                    $dayCityDom.append(html);
+                    //左侧html写入
+                    $("#plandateList .on").find('.dateMgo').append(leftHtml);
+                    //城市搜索相关操作
+                    $("#addDayCity").val('');
+                    $("#addDayCity").blur();
+                    $searchCity.hide();
+                    //右侧搜索城市操作
+                    right_search_city();
+                    layer.msg(res.Message);
+                }
+            }
+        } else {
+            layer.msg(res.Message);
+        }
+    });
+}
+
+/**
+ * 右侧搜索城市操作
+ * @param type 操作类型
+ */
+function right_search_city(type) {
+    var cityIdArr = [];
+    var cityNameArr = [];
+    $("#plandateList li").find('.startArea').each(function () {
+        cityIdArr.push($(this).attr('data-id'));
+        if ($(this).text() != '暂无安排') {
+            cityNameArr.push($.trim($(this).text()));
+        }
+    });
+    //数组去重，去null
+    var cityIdArr = ClearNullArr(unique(cityIdArr));
+    var cityNameArr = ClearNullArr(unique(cityNameArr));
+    //右侧默认城市操作
+    if (type == 1) {
+        var $id = $("#plandateList .on").find('.startArea:last').attr('data-id');
+        var $title = $.trim($("#plandateList .on").find('.startArea:last').text());
+        if ($id != 'null') {
+            $("#detailCity").attr('data-id', $id);
+            $("#detailCity").html($title + '<i class="icon f14 iconfont icon-xiangxia"></i>');
+        } else {
+            $("#detailCity").attr('data-id', $id);
+            $("#detailCity").html('请选择城市<i class="icon f14 iconfont icon-xiangxia"></i>');
+        }
+    }
+    //拼接右侧搜索城市html
+    var html = '';
+    $.each(cityIdArr, function (i, list) {
+        html += '<li><a href="javascript:void(0);" data-id="' + list + '">' + cityNameArr[i] + '</a></li>';
+    });
+    $("#hascity").html(html);
+}
+
+/**
+ * 保存查看
+ */
+function save_view() {
+    var ajaxData = {
+        'url': '/plan/ajaxspot/',
+        'dato': {
+            'Intention': "SaveView", //方法
+            'PlanId': pId, //此行程id
+        }
+    };
+    apiRequest(ajaxData, function (zt, res) {
+        if (res.ResultCode == 200) {
+            location.href = res.Url;
+        } else {
+            layer.msg(res.Message);
+        }
+    });
+}
+
+// 谷歌地图距离矩阵响应api
+(function () {
+    function initMap() {
+        // var LatLng1 = [55.930385, -3.118425];
+        // var LatLng2 = [50.087692, 14.421150];
+        //
+        // //获取距离
+        // Matrix(LatLng1, LatLng2, 'DRIVING', cb);
+        // function cb(response, status) {
+        // }
+        //
+        // //获取地址
+        // reverseCoding(LatLng2);
+
+        //获取交通线路
+        // directionsMome(LatLng1, LatLng2);
+    }
+
+
+    window.initMap = initMap;
+})();
+
+/**
+ * 距离矩阵响应
+ * @param LatLng1 起点坐标
+ * @param LatLng2 终点坐标
+ * @param travelMode  选择交通方式 BUS SUBWAY DRIVING目前逻辑三种
+ * @cb 请求后的回调(response, status)
+ */
+function Matrix(LatLng1, LatLng2, travelMode, cb) {
+    return new Promise(function (res, err) {
+        var MatrixFlag = false;//自驾行开关
+        //两点坐标
+        var origin1 = new google.maps.LatLng(LatLng1[0], LatLng1[1]);
+        var destinationA = new google.maps.LatLng(LatLng2[0], LatLng2[1]);
+
+
+        if (travelMode === 'BUS') {
+            var transitMode = 'BUS';
+            atrixFlag = false;
+        } else if (travelMode === 'SUBWAY') {
+            var transitMode = 'SUBWAY';
+            MatrixFlag = false;
+        } else {
+            MatrixFlag = true;//走自驾行请求
+        }
+
+
+        // 公交和地铁->travelMode 为 TRANSIT
+        var TransitOptions = {
+            arrivalTime: new Date(Date.now() + 1),
+            modes: [transitMode]//表示计算的路线应首选x交通方法出行。
+        };
+
+        //自驾->travelMode 为 DRIVING
+        var DrivingOptions = {
+            departureTime: new Date(Date.now() + 1),
+            //为在同时考虑已知历史交通状况和实时交通状况的情况下对出行时间做出的最佳估计
+            trafficModel: 'bestguess'
+        };
+
+
+        //请求服务器
+        var service = new google.maps.DistanceMatrixService();
+        if (MatrixFlag) {
+            //自驾请求
+            service.getDistanceMatrix({
+                //必选
+                origins: [origin1], //多个计算起点的坐标
+                destinations: [destinationA],//多个计算终点的坐标
+
+                travelMode: 'DRIVING', //驾驶方式
+                drivingOptions: DrivingOptions,
+
+                avoidHighways: false,//计算起点与终点之间的路线时将尽可能避免公路
+                avoidTolls: false//计算两点之间的路线时将尽可能使用非收费路线
+            }, function (response, status) {
+                res(response, status)
+            });
+
+        } else {
+            //公家请求
+            service.getDistanceMatrix({
+                //必选
+                origins: [origin1], //多个计算起点的坐标
+                destinations: [destinationA],//多个计算终点的坐标
+
+                //下面都是可选,二选一
+                travelMode: 'TRANSIT',//交通方式选择
+                transitOptions: TransitOptions,
+
+                avoidHighways: false,//计算起点与终点之间的路线时将尽可能避免公路
+                avoidTolls: false//计算两点之间的路线时将尽可能使用非收费路线
+            }, function (response, status) {
+                res(response, status)
+            });
+        }
+    });
+}
+
+/***
+ * 反向地理编码、获取地址
+ * @param LatLng1 坐标就可以
+ */
+function reverseCoding(LatLng) {
+    return new Promise(function (res, err) {
+        var latlng = {lat: parseFloat(LatLng[0]), lng: parseFloat(LatLng[1])};
+        var geocoder = new google.maps.Geocoder;
+        geocoder.geocode({'location': latlng}, function (results, status) {
+            if (status === 'OK') {
+                res(results[0].formatted_address);
+            } else {
+                res('暂无');
+            }
+        });
+    });
+}
+
+/**
+ * 交通方法之线路切换
+ */
+function directionsMome(LatLng1, LatLng2) {
+    //服务器和绘画
+    var directionsDisplay = new google.maps.DirectionsRenderer;
+    var directionsService = new google.maps.DirectionsService;
+    //地图
+    var map = new google.maps.Map(document.getElementById('sceneryList'), {
+        zoom: 14,
+        center: {lat: LatLng1[0], lng: LatLng1[1]}
+    });
+    directionsDisplay.setMap(map);
+
+    //初始化
+    calculateAndDisplayRoute(directionsService, directionsDisplay);
+
+    //切换交通方式
+    document.getElementsByClassName('planName')[0].addEventListener('change', function () {//改成tab
+        calculateAndDisplayRoute(directionsService, directionsDisplay);
+    });
+
+
+    function calculateAndDisplayRoute(directionsService, directionsDisplay) {
+        // var selectedMode = document.getElementById('mode').value;   //先假设是DRIVING
+
+        directionsService.route({
+            origin: {lat: LatLng1[0], lng: LatLng1[1]},
+            destination: {lat: LatLng2[0], lng: LatLng2[1]},
+            travelMode: google.maps.TravelMode['DRIVING']
+        }, function (response, status) {
+            if (status == 'OK') {
+                directionsDisplay.setDirections(response);//绘画线路
+            } else {
+            }
+        });
+    }
+
+}
+
+/**
+ * 公交通地点之线路详情切换
+ */
+function directionsAddress() {
+    var directionsDisplay = new google.maps.DirectionsRenderer;
+    var directionsService = new google.maps.DirectionsService;
+    var map = new google.maps.Map(document.getElementById('map'), {
+        zoom: 7,
+        center: {lat: 41.85, lng: -87.65}
+    });
+    directionsDisplay.setMap(map);
+
+    directionsDisplay.setPanel(document.getElementById('right-panel'));
+
+    var control = document.getElementById('floating-panel');
+    control.style.display = 'block';
+    map.controls[google.maps.ControlPosition.TOP_CENTER].push(control);
+
+    var onChangeHandler = function () {
+        calculateAndDisplayRoute(directionsService, directionsDisplay);
+    };
+    document.getElementById('start').addEventListener('change', onChangeHandler);
+    document.getElementById('end').addEventListener('change', onChangeHandler);
+}
+
+function calculateAndDisplayRoute(directionsService, directionsDisplay) {
+    var start = document.getElementById('start').value;
+    var end = document.getElementById('end').value;
+    directionsService.route({
+        origin: start,
+        destination: end,
+        travelMode: 'DRIVING'
+    }, function (response, status) {
+        if (status === 'OK') {
+            directionsDisplay.setDirections(response);
+        } else {
+            window.alert('Directions request failed due to ' + status);
+        }
+    });
+}
+
+//自定义信息图层
+function mapsOverlayView() {
+    USGSOverlay.prototype = new google.maps.OverlayView();
+
+    function USGSOverlay(bounds, html, labelNum, map, styleFN) {
+        this.bounds_ = bounds;
+        this.html_ = html;
+        this.labelNum_ = labelNum;
+        this.map_ = map;
+        this.div_ = null;
+        this.setMap(map);
+        this.styleFN = styleFN;
+    }
+
+
+    USGSOverlay.prototype.onAdd = function () {
+        this.div_ = this.styleFN();
+        // Add the element to the "overlayImage" pane.
+        var panes = this.getPanes();
+        panes.overlayImage.appendChild(this.div_);
+    };
+    USGSOverlay.prototype.draw = function () {
+        var overlayProjection = this.getProjection();
+        var sw = overlayProjection.fromLatLngToDivPixel(this.bounds_.getSouthWest());
+        var ne = overlayProjection.fromLatLngToDivPixel(this.bounds_.getNorthEast());
+        var div = this.div_;
+        div.style.left = sw.x + 'px';
+        div.style.top = ne.y + 'px';
+        div.style.width = (ne.x - sw.x) + 'px';
+        div.style.height = (sw.y - ne.y) + 'px';
+    };
+    USGSOverlay.prototype.onRemove = function () {
+        this.div_.parentNode.removeChild(this.div_);
+    };
+    USGSOverlay.prototype.hide = function () {
+        if (this.div_) {
+            // The visibility property must be a string enclosed in quotes.
+            this.div_.style.visibility = 'hidden';
+        }
+    };
+    USGSOverlay.prototype.show = function () {
+        if (this.div_) {
+            this.div_.style.visibility = 'visible';
+        }
+    };
+    USGSOverlay.prototype.toggle = function () {
+        if (this.div_) {
+            if (this.div_.style.visibility === 'hidden') {
+                this.show();
+            } else {
+                this.hide();
+            }
+        }
+    };
+    USGSOverlay.prototype.toggleDOM = function () {
+        if (this.getMap()) {
+            // Note: setMap(null) calls OverlayView.onRemove()
+            this.setMap(null);
+        } else {
+            this.setMap(this.map_);
+        }
+    };
+    USGSOverlay.prototype.delDOM = function () {
+        if (this.getMap()) {
+            // Note: setMap(null) calls OverlayView.onRemove()
+            this.setMap(null);
+        }
+    };
+    window.USGSOverlay = USGSOverlay;
+}
+
+//跨域通讯
+window.addEventListener('message', function (ev) {
+    console.log(ev.data);
+    $('#plandateList li[data-id=' + ev.data + ']').trigger('click');
+    layer.closeAll();
+});
+
