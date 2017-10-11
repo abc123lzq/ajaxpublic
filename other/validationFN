@@ -1,0 +1,237 @@
+/**
+ * 填写订单离开验证
+ */
+function order_leave_verify() {
+    $(document).on({
+        blur:function(e){
+            var $thisDom = $(this);
+            leave_verify_info($thisDom);
+        },
+        focus:function(e){
+            $(this).parents('.inputbox').removeClass('erro');
+            $(this).next('.errotip').remove();
+            var type = $(this).attr('name');
+            var val = $.trim($(this).val());
+            if(type == 'order_mobile'){
+                if(!rule.phone.test(val) == true){
+                    $(".order_login").parents('span').remove();
+                    $("#order_code").parents('tr').remove();
+                }
+            }
+        }
+    },".inputbox input");
+}
+
+/**
+ * 填写订单，验证错误信息操作
+ * @param $thisDom 当前验证的input
+ */
+function leave_verify_info($thisDom) {
+    var type = $thisDom.attr('name');
+    var val = $.trim($thisDom.val());
+    //如不是必填字段，不执行验证
+    if(!$thisDom.is('.required')){
+        return
+    }
+    var errorMsg = verify_Errors(val,type);
+    if(errorMsg != undefined){  //验证失败，执行
+        var html ='<p class="errotip">'+errorMsg+'</p>';
+        $thisDom.parents('.inputbox').addClass('erro');
+        $thisDom.next('.errotip').remove();
+        $thisDom.after(html);
+        if(type == 'order_mobile'){
+            if(!rule.phone.test(val) == true){
+                $(".order_login").parents('span').remove();
+                $("#order_code").parents('tr').remove();
+            }
+        }
+    }else { //验证成功，执行
+        $thisDom.parents('.inputbox').removeClass('erro');
+        $thisDom.next('.errotip').remove();
+        if(type == 'order_mobile'){ //针对手机号码，进行特殊处理
+            $(".order_login").parents('span').remove();
+            $("#order_code").parents('tr').remove();
+            order_mobile($thisDom);
+        }
+    }
+}
+
+/**
+ * 验证规则
+ * @param val 验证值
+ * @param type 验证类型
+ * @returns {*} 返回验证是否成功与错误信息
+ */
+function verify_Errors(val,type) {
+    if(type == 'order_cnName'){
+        if(!val.length) return '姓名不能为空';
+        if (val.length < '2' || val.length > '20') return '只能输入纯中文长度为2-10位,不能有空格';
+        if(!rule.NameZH.test(val) == true) return '只能输入纯中文长度为2-10位,不能有空格';
+    }
+    //手机号码验证
+    if(type == 'order_mobile'){
+        if(!val.length) return '手机号码不能为空';
+        if(!rule.phone.test(val) == true) return '手机号码格式不正确';
+    }
+    //短信验证码
+    if(type == 'order_code'){
+        if(!val.length) return '短信验证码不能为空';
+        if(!/^\d{6}$/i.test(val) == true) return '请输入6位纯数字短信验证码';
+    }
+    //邮箱验证
+    if(type == 'order_email'){
+        if(!val.length) return '邮箱不能为空';
+        if(!rule.Mail.test(val) == true) return '邮箱格式不正确';
+    }
+    //旅客姓名
+    if(type == 'order_lvName'){
+        if(!val.length) return '旅客姓名不能为空';
+        if(!rule.Name.test(val) == true) return '只能输入中英文长度为2-20位,不能有空格';
+    }
+    //旅客护照姓
+    if(type == 'order_lvHZSurname'){
+        if(!val.length) return '旅客姓不能为空';
+    }
+    //旅客护照名
+    if(type == 'order_lvHZSName'){
+        if(!val.length) return '旅客名不能为空';
+    }
+    //旅客护照
+    if(type == 'order_lvHZ'){
+        if(!val.length) return '旅客护照不能为空';
+    }
+    //旅客出生日期
+    if(type == 'order_lvBirthTime'){
+        if(!val.length) return '请选择旅客出生日期';
+    }
+    //旅客手机号码
+    if(type == 'order_lvMobile'){
+        if(!val.length) return '旅客手机号码不能为空';
+        if(!rule.phone.test(val) == true) return '旅客手机号码格式不正确';
+    }
+    //旅客微信
+    if(type == 'order_lvWeiXin'){
+        if(!val.length) return '旅客微信不能为空';
+    }
+    //酒店名称
+    if(type == 'order_hotel_name'){
+        if(!val.length) return '酒店名称不能为空';
+    }
+    //酒店地址
+    if(type == 'order_hotel_address'){
+        if(!val.length) return '酒店地址不能为空';
+    }
+    //酒店电话
+    if(type == 'order_hotel_tel'){
+        if(!val.length) return '酒店电话不能为空';
+    }
+    //航班抵达日期
+    if(type == 'order_flightJoinDate'){
+        if(!val.length) return '请选择航班抵达日期';
+    }
+    //接机航班号
+    if(type == 'order_flightJoinCourse'){
+        if(!val.length) return '请填写接机航班号';
+    }
+    //航班抵达时间
+    if(type == 'order_flightJoinTime'){
+        if(!val.length) return '请选择航班抵达时间';
+    }
+    //航班出发日期
+    if(type == 'order_flightDeliverDate'){
+        if(!val.length) return '请选择航班出发日期';
+    }
+    //请填写出发航班号
+    if(type == 'order_flightDeliverCourse'){
+        if(!val.length) return '请填写出发航班号';
+    }
+    //航班出发时间
+    if(type == 'order_flightDeliverTime'){
+        if(!val.length) return '请选择航班出发时间';
+    }
+    //选择城市
+    if(type == 'order_city'){
+        if(!val.length) return '请选择城市';
+    }
+    //详细地址
+    if(type == 'order_address'){
+        if(!val.length) return '请填写详细地址';
+    }
+}
+
+/**
+ * 提交验证相关dom操作
+ * @param $thisDom 操作的dom
+ * @param errorMsg 错误msg
+ */
+function submit_verify($thisDom,errorMsg) {
+    var html ='<p class="errotip">'+errorMsg+'</p>';
+    $thisDom.parents('.inputbox').addClass('erro');
+    $thisDom.next('.errotip').remove();
+    $thisDom.after(html);
+    W_ScrollTo($thisDom,+50);
+}
+
+/**
+ * 针对手机号码进行特别操作
+ * @param $thisDom 手机号码的input Dom
+ */
+function order_mobile($thisDom) {
+    var val = $thisDom.val();
+    get_is_login().then(function (res,err) { //验证是否登录
+        if(res.ResultCode == '0'){ //未登录情况下执行
+            var ajaxData = {
+                'Intention':'IsRegister',
+                'Mobile':val
+            };
+            get_is_user(ajaxData).then(function (res,err) { //判断账号是否存在
+                if(res.ResultCode == '200'){ //存在，执行
+                    var html = '<span><a href="javascript:void(0)" class="GoLogin order_login">立即登录 </a>查看更多优惠</span>';
+                    $thisDom.after(html);
+                }else if(res.ResultCode == '100'){ //不存在，执行
+                    var html = '';
+                    html += '<tr>';
+                    html += '<th>验证码：</th>';
+                    html += '<td>';
+                    html += '<div class="inputbox">';
+                    html += '<input type="text" name="order_code" id="order_code" max="6" value="" class="OrderInput required" placeholder="请输入6位验证码"/>';
+                    html += '<input type="button" id="order_code_btn" value="获取验证码" class="yzmInput"/>';
+                    html += '</div>';
+                    html += '</td>';
+                    html += '</tr>';
+                    $thisDom.parents('tr').after(html);
+                    $thisDom.after('<p class="errotip" style="display: block;color: #999999" >验证手机后可登录查看订单</p>');
+                }
+            });
+        }
+    });
+}
+
+//立即登录事件
+$(document).on('click','.order_login',function () {
+    get_async_login().then(function (res,err) {
+        if(res.ResultCode == '200'){
+            $(".order_login").parents('span').remove();
+            $("#order_code").parents('tr').remove();
+            //执行优惠券接口
+            get_coupon(1);
+        }
+    });
+});
+
+//获取短信验证码事件
+$(document).on('click','#order_code_btn',function () {
+    var o = this;
+    var ajaxData = {
+        'Intention':'ValidateMobileCode',
+        'Mobile': $("#order_mobile").val()
+    };
+    $.post('/commonajax/',ajaxData,function (json) {
+        if(json.ResultCode == '200'){
+            get_code_time(o);
+            layer.msg(json.Message);
+        }else if(json.ResultCode == '100'){
+            layer.msg(json.Message);
+        }
+    },'json');
+});
