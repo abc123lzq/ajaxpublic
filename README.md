@@ -35,7 +35,7 @@
     }
 ```
 
-###Promise使用方法
+### Promise使用方法
 > 原理：采用bluebird来兼容所有游览器。在实例上套上Promise对象并把res函数传到结构里去取ajax的返回值
 
 ```
